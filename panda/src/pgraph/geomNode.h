@@ -33,7 +33,7 @@ class GraphicsStateGuardianBase;
  */
 class EXPCL_PANDA_PGRAPH GeomNode : public PandaNode {
 PUBLISHED:
-  explicit GeomNode(const std::string &name);
+  explicit GeomNode(std::string name);
 
 protected:
   GeomNode(const GeomNode &copy);
@@ -50,7 +50,6 @@ public:
                       bool &found_any,
                       const TransformState *transform,
                       Thread *current_thread) const;
-  virtual bool is_renderable() const;
   virtual void add_for_draw(CullTraverser *trav, CullTraverserData &data);
   virtual CollideMask get_legal_collide_mask() const;
 

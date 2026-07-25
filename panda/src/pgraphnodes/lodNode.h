@@ -18,6 +18,7 @@
 #include "config_pgraphnodes.h"
 #include "pandaNode.h"
 #include "luse.h"
+#include "memoryBase.h"
 #include "pvector.h"
 
 /**
@@ -27,9 +28,9 @@
  */
 class EXPCL_PANDA_PGRAPHNODES LODNode : public PandaNode {
 PUBLISHED:
-  INLINE explicit LODNode(const std::string &name);
+  INLINE explicit LODNode(std::string name);
 
-  static PT(LODNode) make_default_lod(const std::string &name);
+  static PT(LODNode) make_default_lod(std::string name);
 
 protected:
   INLINE LODNode(const LODNode &copy);
@@ -115,7 +116,7 @@ private:
   static const LColor &get_default_show_color(int index);
 
 protected:
-  class Switch {
+  class Switch : public MemoryBase {
   public:
     INLINE Switch(PN_stdfloat in, PN_stdfloat out);
     INLINE PN_stdfloat get_in() const;

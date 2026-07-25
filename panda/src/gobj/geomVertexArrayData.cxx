@@ -83,8 +83,8 @@ GeomVertexArrayData(const GeomVertexArrayFormat *array_format,
                     GeomVertexArrayData::UsageHint usage_hint) :
   SimpleLruPage(0),
   _array_format(array_format),
-  _cycler(CData(usage_hint)),
-  _contexts(nullptr)
+  _contexts(nullptr),
+  _cycler(CData(usage_hint))
 {
   set_lru_size(0);
   nassertv(_array_format->is_registered());
@@ -98,36 +98,12 @@ GeomVertexArrayData(const GeomVertexArrayData &copy) :
   CopyOnWriteObject(copy),
   SimpleLruPage(copy),
   _array_format(copy._array_format),
-  _cycler(copy._cycler),
-  _contexts(nullptr)
+  _contexts(nullptr),
+  _cycler(copy._cycler)
 {
   copy.mark_used_lru();
 
   set_lru_size(get_data_size_bytes());
-  nassertv(_array_format->is_registered());
-}
-
-/**
- * The copy assignment operator is not pipeline-safe.  This will completely
- * obliterate all stages of the pipeline, so don't do it for a
- * GeomVertexArrayData that is actively being used for rendering.
- */
-void GeomVertexArrayData::
-operator = (const GeomVertexArrayData &copy) {
-  CopyOnWriteObject::operator = (copy);
-  SimpleLruPage::operator = (copy);
-
-  copy.mark_used_lru();
-
-  _array_format = copy._array_format;
-  _cycler = copy._cycler;
-
-  OPEN_ITERATE_ALL_STAGES(_cycler) {
-    CDStageWriter cdata(_cycler, pipeline_stage);
-    cdata->_modified = Geom::get_next_modified();
-  }
-  CLOSE_ITERATE_ALL_STAGES(_cycler);
-
   nassertv(_array_format->is_registered());
 }
 
@@ -239,18 +215,23 @@ is_prepared(PreparedGraphicsObjects *prepared_objects) const {
 VertexBufferContext *GeomVertexArrayData::
 prepare_now(PreparedGraphicsObjects *prepared_objects,
             GraphicsStateGuardianBase *gsg) {
-  if (_contexts == nullptr) {
+  if (_contexts != nullptr) {
+    Contexts::const_iterator ci;
+    ci = _contexts->find(prepared_objects);
+    if (ci != _contexts->end()) {
+      return (*ci).second;
+    }
+  } else {
     _contexts = new Contexts;
-  }
-  Contexts::const_iterator ci;
-  ci = _contexts->find(prepared_objects);
-  if (ci != _contexts->end()) {
-    return (*ci).second;
   }
 
   VertexBufferContext *vbc = prepared_objects->prepare_vertex_buffer_now(this, gsg);
   if (vbc != nullptr) {
     (*_contexts)[prepared_objects] = vbc;
+  }
+  else if (_contexts->empty()) {
+    delete _contexts;
+    _contexts = nullptr;
   }
   return vbc;
 }
@@ -457,11 +438,13 @@ finalize(BamReader *manager) {
 
   CDWriter cdata(_cycler, true);
 
-  CPT(GeomVertexArrayFormat) new_array_format =
-    GeomVertexArrayFormat::register_format(_array_format);
+  if (_array_format != nullptr) {
+    CPT(GeomVertexArrayFormat) new_array_format =
+      GeomVertexArrayFormat::register_format(_array_format);
 
-  manager->change_pointer(_array_format, new_array_format);
-  _array_format = new_array_format;
+    manager->change_pointer(_array_format, new_array_format);
+    _array_format = new_array_format;
+  }
 
   PT(BamAuxData) aux_data = (BamAuxData *)manager->get_aux_data(this, "");
   if (aux_data != nullptr) {
@@ -551,6 +534,10 @@ write_datagram(BamWriter *manager, Datagram &dg, void *extra_data) const {
 void GeomVertexArrayData::CData::
 fillin(DatagramIterator &scan, BamReader *manager, void *extra_data) {
   GeomVertexArrayData *array_data = (GeomVertexArrayData *)extra_data;
+
+  if (!manager->expect_remaining_size(scan, (manager->get_file_minor_ver() < 8) ? 3 : 5)) {
+    return;
+  }
   _usage_hint = (UsageHint)scan.get_uint8();
 
   if (manager->get_file_minor_ver() < 8) {
@@ -564,6 +551,11 @@ fillin(DatagramIterator &scan, BamReader *manager, void *extra_data) {
   } else {
     // Now, the array data is just stored directly.
     size_t size = scan.get_uint32();
+
+    if (!manager->expect_remaining_size(scan, size)) {
+      return;
+    }
+
     _buffer.unclean_realloc(size);
     _buffer.set_size(size);
 

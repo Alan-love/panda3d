@@ -92,7 +92,7 @@ set_ram_image(PyObject *image, Texture::CompressionMode compression,
  * support compressed image data or sub-pages; use set_ram_image() for that.
  */
 void Extension<Texture>::
-set_ram_image_as(PyObject *image, const std::string &provided_format) {
+set_ram_image_as(PyObject *image, std::string_view provided_format) {
   // Check if perhaps a PointerToArray object was passed in.
   if (DtoolInstance_Check(image)) {
     if (DtoolInstance_TYPE(image) == &Dtool_ConstPointerToArray_unsigned_char) {
@@ -136,6 +136,34 @@ set_ram_image_as(PyObject *image, const std::string &provided_format) {
   }
 
   Dtool_Raise_ArgTypeError(image, 0, "Texture.set_ram_image_as", "CPTA_uchar or buffer");
+}
+
+/**
+ * A special Python method that is invoked by copy.deepcopy(tex).  This makes
+ * sure that the copy has a unique copy of the RAM image.
+ */
+PT(Texture) Extension<Texture>::
+__deepcopy__(PyObject *memo) const {
+  PT(Texture) copy = _this->make_copy();
+  {
+    Texture::CDWriter cdata(copy->_cycler, true);
+    for (Texture::RamImage &image : cdata->_ram_images) {
+      if (image._image.get_ref_count() > 1) {
+        PTA_uchar new_image;
+        new_image.v() = image._image.v();
+        image._image = std::move(new_image);
+      }
+    }
+    {
+      Texture::RamImage &image = cdata->_simple_ram_image;
+      if (image._image.get_ref_count() > 1) {
+        PTA_uchar new_image;
+        new_image.v() = image._image.v();
+        image._image = std::move(new_image);
+      }
+    }
+  }
+  return copy;
 }
 
 #endif  // HAVE_PYTHON

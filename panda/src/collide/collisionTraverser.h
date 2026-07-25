@@ -45,7 +45,7 @@ class CollisionEntry;
  */
 class EXPCL_PANDA_COLLIDE CollisionTraverser : public Namable {
 PUBLISHED:
-  explicit CollisionTraverser(const std::string &name = "ctrav");
+  explicit CollisionTraverser(std::string name = "ctrav");
   ~CollisionTraverser();
 
   INLINE void set_respect_prev_transform(bool flag);
@@ -80,8 +80,8 @@ PUBLISHED:
   void output(std::ostream &out) const;
   void write(std::ostream &out, int indent_level) const;
 
-  EXTENSION(PyObject *__getstate__() const);
-  EXTENSION(void __setstate__(PyObject *state));
+  PY_EXTENSION(PyObject *__getstate__() const);
+  PY_EXTENSION(void __setstate__(PyObject *state));
 
 private:
   typedef pvector<CollisionLevelStateSingle> LevelStatesSingle;

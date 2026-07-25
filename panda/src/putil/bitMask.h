@@ -39,18 +39,18 @@ PUBLISHED:
   constexpr BitMask() = default;
   ALWAYS_INLINE constexpr BitMask(WordType init_value);
 
-  INLINE static BitMask<WType, nbits> all_on();
-  INLINE static BitMask<WType, nbits> all_off();
-  INLINE static BitMask<WType, nbits> lower_on(int on_bits);
-  INLINE static BitMask<WType, nbits> bit(int index);
-  INLINE static BitMask<WType, nbits> range(int low_bit, int size);
+  constexpr static BitMask<WType, nbits> all_on();
+  constexpr static BitMask<WType, nbits> all_off();
+  constexpr static BitMask<WType, nbits> lower_on(int on_bits);
+  constexpr static BitMask<WType, nbits> bit(int index);
+  constexpr static BitMask<WType, nbits> range(int low_bit, int size);
 
   constexpr static bool has_max_num_bits() { return true; }
   constexpr static int get_max_num_bits() { return num_bits; }
 
   constexpr int get_num_bits() const;
   INLINE bool get_bit(int index) const;
-  INLINE void set_bit(int index);
+  constexpr void set_bit(int index);
   INLINE void clear_bit(int index);
   INLINE void set_bit_to(int index, bool value);
   INLINE bool is_zero() const;
@@ -126,8 +126,8 @@ PUBLISHED:
   INLINE int get_key() const;
 
   EXTENSION(bool __bool__() const);
-  EXTENSION(PyObject *__int__() const);
-  EXTENSION(PyObject *__reduce__(PyObject *self) const);
+  PY_EXTENSION(PyObject *__int__() const);
+  PY_EXTENSION(PyObject *__reduce__(PyObject *self) const);
 
 public:
   INLINE void generate_hash(ChecksumHashGenerator &hashgen) const;
@@ -139,7 +139,7 @@ public:
   static TypeHandle get_class_type() {
     return _type_handle;
   }
-  static void init_type(const std::string &name);
+  static void init_type(std::string_view name);
 
 private:
   static TypeHandle _type_handle;
@@ -170,8 +170,8 @@ typedef BitMask<uint64_t, 64> BitMask64;
 typedef BitMask32 BitMaskNative;
 #elif NATIVE_WORDSIZE == 64
 typedef BitMask64 BitMaskNative;
-#else
+#else // NATIVE_WORDSIZE
 #error No definition for NATIVE_WORDSIZE--should be defined in dtoolbase.h.
 #endif  // NATIVE_WORDSIZE
 
-#endif
+#endif // !BITMASK_H

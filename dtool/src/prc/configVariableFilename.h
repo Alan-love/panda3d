@@ -26,9 +26,11 @@
  */
 class EXPCL_DTOOL_PRC ConfigVariableFilename : public ConfigVariable {
 PUBLISHED:
-  INLINE ConfigVariableFilename(const std::string &name);
-  INLINE ConfigVariableFilename(const std::string &name, const Filename &default_value,
-                                const std::string &description = std::string(), int flags = 0);
+  INLINE explicit ConfigVariableFilename(std::string_view name);
+  INLINE explicit ConfigVariableFilename(std::string_view name,
+                                         const Filename &default_value,
+                                         std::string_view description = std::string_view(),
+                                         int flags = 0);
 
   INLINE void operator = (const Filename &value);
   INLINE operator const Filename &() const;
@@ -61,13 +63,14 @@ PUBLISHED:
   INLINE void set_word(size_t n, const Filename &value);
 
   INLINE bool __bool__() const;
+  INLINE std::wstring __fspath__() const;
 
 private:
   void reload_cache();
   INLINE const Filename &get_ref_value() const;
 
 private:
-  AtomicAdjust::Integer _local_modified;
+  Modified _local_modified;
   Filename _cache;
 };
 

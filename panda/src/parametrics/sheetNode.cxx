@@ -66,10 +66,11 @@ fillin(DatagramIterator &scan, BamReader *reader) {
  *
  */
 SheetNode::
-SheetNode(const std::string &name) :
-  PandaNode(name)
+SheetNode(std::string name) :
+  PandaNode(std::move(name))
 {
   set_cull_callback();
+  set_renderable();
 }
 
 /**
@@ -137,17 +138,6 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
     }
   }
 
-  return true;
-}
-
-/**
- * Returns true if there is some value to visiting this particular node during
- * the cull traversal for any camera, false otherwise.  This will be used to
- * optimize the result of get_net_draw_show_mask(), so that any subtrees that
- * contain only nodes for which is_renderable() is false need not be visited.
- */
-bool SheetNode::
-is_renderable() const {
   return true;
 }
 
@@ -329,10 +319,8 @@ render_sheet(CullTraverser *trav, CullTraverserData &data,
     state = state->add_attrib(ColorAttrib::make_vertex());
   }
 
-  CullableObject *object =
-    new CullableObject(geom, state,
-                       data.get_internal_transform(trav));
-  trav->get_cull_handler()->record_object(object, trav);
+  trav->get_cull_handler()->record_object(CullableObject(
+    std::move(geom), std::move(state), data.get_internal_transform(trav)), trav);
 }
 
 /**

@@ -91,14 +91,13 @@ TypeHandle x11GraphicsWindow::_type_handle;
  */
 x11GraphicsWindow::
 x11GraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
-                  const string &name,
+                  std::string name,
                   const FrameBufferProperties &fb_prop,
                   const WindowProperties &win_prop,
                   int flags,
                   GraphicsStateGuardian *gsg,
                   GraphicsOutput *host) :
-  GraphicsWindow(engine, pipe, name, fb_prop, win_prop, flags, gsg, host)
-{
+  GraphicsWindow(engine, pipe, std::move(name), fb_prop, win_prop, flags, gsg, host) {
   x11GraphicsPipe *x11_pipe;
   DCAST_INTO_V(x11_pipe, _pipe);
   _display = x11_pipe->get_display();
@@ -115,15 +114,19 @@ x11GraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
     _XRRSetScreenConfig = x11_pipe->_XRRSetScreenConfig;
   }
 
-  _awaiting_configure = false;
+  _awaiting_configure_since = -1;
   _dga_mouse_enabled = false;
   _raw_mouse_enabled = false;
   _override_redirect = False;
   _wm_delete_window = x11_pipe->_wm_delete_window;
+  _net_wm_ping = x11_pipe->_net_wm_ping;
+  _net_wm_state = x11_pipe->_net_wm_state;
 
   PT(GraphicsWindowInputDevice) device = GraphicsWindowInputDevice::pointer_and_keyboard(this, "keyboard_mouse");
   add_input_device(device);
   _input = device;
+
+  enable_detectable_auto_repeat();
 }
 
 /**
@@ -131,25 +134,19 @@ x11GraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
  */
 x11GraphicsWindow::
 ~x11GraphicsWindow() {
-  if (!_cursor_filenames.empty()) {
-    LightReMutexHolder holder(x11GraphicsPipe::_x_mutex);
-    for (auto item : _cursor_filenames) {
-      XFreeCursor(_display, item.second);
-    }
-  }
 }
 
 /**
- * Returns the MouseData associated with the nth input device's pointer.  This
+ * Returns the PointerData associated with the nth input device's pointer.  This
  * is deprecated; use get_pointer_device().get_pointer() instead, or for raw
  * mice, use the InputDeviceManager interface.
  */
-MouseData x11GraphicsWindow::
+PointerData x11GraphicsWindow::
 get_pointer(int device) const {
-  MouseData result;
+  PointerData result;
   {
     LightMutexHolder holder(_input_lock);
-    nassertr(device >= 0 && device < (int)_input_devices.size(), MouseData());
+    nassertr(device >= 0 && device < (int)_input_devices.size(), PointerData());
 
     result = ((const GraphicsWindowInputDevice *)_input_devices[device].p())->get_pointer();
 
@@ -239,7 +236,7 @@ begin_frame(FrameMode mode, Thread *current_thread) {
   if (_gsg == nullptr) {
     return false;
   }
-  if (_awaiting_configure) {
+  if (_awaiting_configure_since != -1) {
     // Don't attempt to draw while we have just reconfigured the window and we
     // haven't got the notification back yet.
     return false;
@@ -367,9 +364,7 @@ process_events() {
 
     case PropertyNotify:
       //std::cout << "PropertyNotify event: atom = " << event.xproperty.atom << std::endl;
-      x11GraphicsPipe *x11_pipe;
-      DCAST_INTO_V(x11_pipe, _pipe);
-      if (event.xproperty.atom == x11_pipe->_net_wm_state) {
+      if (event.xproperty.atom == _net_wm_state) {
         // currently we're only interested in the net_wm_state type of
         // changes and only need to gather property informations once at
         // the end after the while loop
@@ -513,6 +508,13 @@ process_events() {
           system_changed_properties(properties);
         }
       }
+      else if ((Atom)(event.xclient.data.l[0]) == _net_wm_ping &&
+               event.xclient.window == _xwindow) {
+        x11GraphicsPipe *x11_pipe;
+        DCAST_INTO_V(x11_pipe, _pipe);
+        event.xclient.window = x11_pipe->get_root();
+        XSendEvent(_display, x11_pipe->get_root(), False, SubstructureRedirectMask | SubstructureNotifyMask, &event);
+      }
       break;
 
     case DestroyNotify:
@@ -530,7 +532,14 @@ process_events() {
 
   if (got_configure_event) {
     // Now handle the last configure event we found.
-    _awaiting_configure = false;
+    if (x11display_cat.is_debug() && _awaiting_configure_since != -1) {
+      unsigned long elapsed = (unsigned long)(clock() - _awaiting_configure_since) / (CLOCKS_PER_SEC / 10000);
+      x11display_cat.debug()
+        << "Received ConfigureNotify event after "
+        << (elapsed / 10) << "." << (elapsed % 10) << " ms\n";
+    }
+
+    _awaiting_configure_since = -1;
 
     // Is this the inner corner or the outer corner?  The Xlib docs say it
     // should be the outer corner, but it appears to be the inner corner on my
@@ -572,6 +581,19 @@ process_events() {
 
     changed_properties = true;
   }
+  else if (_awaiting_configure_since != -1) {
+    unsigned long elapsed = (clock() - _awaiting_configure_since);
+    if (elapsed > CLOCKS_PER_SEC / 10) {
+      // Accept that we're never going to get that configure notify event.
+      if (x11display_cat.is_debug()) {
+        elapsed /= (CLOCKS_PER_SEC / 10000);
+        x11display_cat.debug()
+          << "Giving up on waiting for ConfigureNotify event after "
+          << (elapsed / 10) << "." << (elapsed % 10) << " ms\n";
+      }
+      _awaiting_configure_since = -1;
+    }
+  }
 
   if (properties.has_foreground() &&
       (_properties.get_mouse_mode() != WindowProperties::M_absolute)) {
@@ -612,10 +634,10 @@ process_events() {
     Atom type;
     int format;
     unsigned long nItem, bytesAfter;
-    unsigned char *new_window_properties = NULL;
+    unsigned char *new_window_properties = nullptr;
     // gather all properties from the active dispplay and window
     XGetWindowProperty(_display, _xwindow, wmState, 0, LONG_MAX, false, AnyPropertyType, &type, &format, &nItem, &bytesAfter, &new_window_properties);
-    if (nItem > 0) {
+    if (nItem > 0 && new_window_properties != nullptr) {
       x11GraphicsPipe *x11_pipe;
       DCAST_INTO_V(x11_pipe, _pipe);
       // run through all found items
@@ -628,6 +650,7 @@ process_events() {
           is_maximized = true;
         }
       }
+      XFree(new_window_properties);
     }
 
     // Debug entry
@@ -1049,7 +1072,7 @@ set_properties_now(WindowProperties &properties) {
     XReconfigureWMWindow(_display, _xwindow, _screen, value_mask, &changes);
 
     // Don't draw anything until this is done reconfiguring.
-    _awaiting_configure = true;
+    _awaiting_configure_since = clock();
   }
 }
 
@@ -1094,6 +1117,11 @@ close_window() {
     _XRRSetScreenConfig(_display, conf, root, _orig_size_id, _orig_rotation, CurrentTime);
     _orig_size_id = -1;
   }
+
+  for (auto item : _cursor_filenames) {
+    XFreeCursor(_display, item.second);
+  }
+  _cursor_filenames.clear();
 
   GraphicsWindow::close_window();
 }
@@ -1233,6 +1261,15 @@ open_window() {
     XDefineCursor(_display, _xwindow, cursor);
   }
 
+  // Set _NET_STARTUP_ID if we've got it, so that the window manager knows
+  // this window belongs to a particular launch request.
+  const std::string &startup_id = x11_pipe->get_startup_id();
+  if (!startup_id.empty() && _parent_window_handle == nullptr) {
+    XChangeProperty(_display, _xwindow, x11_pipe->_net_startup_id,
+                    x11_pipe->_utf8_string, 8, PropModeReplace,
+                    (unsigned char *)startup_id.c_str(), startup_id.size());
+  }
+
   XMapWindow(_display, _xwindow);
 
   if (_properties.get_raw_mice()) {
@@ -1250,6 +1287,12 @@ open_window() {
   // And tell our parent window that we're now its child.
   if (_parent_window_handle != nullptr) {
     _parent_window_handle->attach_child(_window_handle);
+  }
+
+  // Now that we've opened a window, tell the window manager that the
+  // application has finished starting up.
+  if (!startup_id.empty() && x_send_startup_notification) {
+    x11_pipe->send_startup_notification();
   }
 
   return true;
@@ -1280,6 +1323,15 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
     if (XStringListToTextProperty((char **)&name, 1, &window_name) != 0) {
       window_name_p = &window_name;
     }
+
+#ifdef X_HAVE_UTF8_STRING
+    XTextProperty wm_name;
+    if (Xutf8TextListToTextProperty(_display, (char **)&name, 1,
+                                    XUTF8StringStyle, &wm_name) == Success) {
+      XSetTextProperty(_display, _xwindow, &wm_name, x11_pipe->_net_wm_name);
+      XFree(wm_name.value);
+    }
+#endif
   }
 
   // The size hints request a window of a particular size andor a particular
@@ -1460,9 +1512,6 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
     // mapped.  To do this, we need to send a client message to the root
     // window for each change.
 
-    x11GraphicsPipe *x11_pipe;
-    DCAST_INTO_V(x11_pipe, _pipe);
-
     for (int i = 0; i < next_set_data; ++i) {
       XClientMessageEvent event;
       memset(&event, 0, sizeof(event));
@@ -1484,6 +1533,9 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
   XSetWMProperties(_display, _xwindow, window_name_p, window_name_p,
                    nullptr, 0, size_hints_p, wm_hints_p, class_hints_p);
 
+  if (window_name_p != nullptr) {
+    XFree(window_name.value);
+  }
   if (size_hints_p != nullptr) {
     XFree(size_hints_p);
   }
@@ -1499,6 +1551,7 @@ set_wm_properties(const WindowProperties &properties, bool already_mapped) {
   // X server if the user requests a window close.
   Atom protocols[] = {
     _wm_delete_window,
+    _net_wm_ping,
   };
 
   XSetWMProtocols(_display, _xwindow, protocols,
@@ -2230,6 +2283,8 @@ get_mouse_button(XButtonEvent &button_event) {
     return MouseButton::wheel_left();
   } else if (index == x_wheel_right_button) {
     return MouseButton::wheel_right();
+  } else if (index >= 8) {
+    return MouseButton::button(index - 5);
   } else {
     return MouseButton::button(index - 1);
   }
@@ -2694,4 +2749,23 @@ void x11GraphicsWindow::
 xim_preedit_done(XIC ic, XPointer client_data, XPointer call_data) {
   x11GraphicsWindow *window = (x11GraphicsWindow *)client_data;
   window->handle_preedit_done();
+}
+
+/**
+ * Enables detectable auto-repeat if supported by the X server.
+ */
+void x11GraphicsWindow::
+enable_detectable_auto_repeat() {
+  if (!x_detectable_auto_repeat) {
+    return;
+  }
+
+  Bool supported;
+  if (XkbSetDetectableAutoRepeat(_display, True, &supported)) {
+    x11display_cat.info() << "Detectable auto-repeat enabled.\n";
+  } else if (!supported) {
+    x11display_cat.warning() << "Detectable auto-repeat is not supported by the X server.\n";
+  } else {
+    x11display_cat.error() << "Failed to set detectable auto-repeat.\n";
+  }
 }

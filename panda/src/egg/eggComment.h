@@ -23,25 +23,25 @@
  */
 class EXPCL_PANDA_EGG EggComment : public EggNode {
 PUBLISHED:
-  INLINE explicit EggComment(const std::string &node_name, const std::string &comment);
+  INLINE explicit EggComment(std::string node_name, std::string comment);
   INLINE EggComment(const EggComment &copy);
 
   // You can use the string operators to directly set and manipulate the
   // comment.
 
-  INLINE EggComment &operator = (const std::string &comment);
+  INLINE EggComment &operator = (std::string comment);
   INLINE EggComment &operator = (const EggComment &copy);
 
   INLINE operator const std::string & () const;
 
   // Or, you can set and get it explicitly.
 
-  INLINE void set_comment(const std::string &comment);
+  INLINE void set_comment(std::string comment);
   INLINE std::string get_comment() const;
 
   virtual void write(std::ostream &out, int indent_level) const;
 
-  EXTENSION(PyObject *__reduce__() const);
+  PY_EXTENSION(PyObject *__reduce__() const);
 
 private:
   std::string _comment;

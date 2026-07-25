@@ -19,6 +19,7 @@
 #include "partGroup.h"
 #include "partBundle.h"
 #include "animChannelBase.h"
+#include "small_vector.h"
 
 /**
  * This is the base class for a single animatable piece that may be bound to
@@ -33,7 +34,7 @@ protected:
   INLINE MovingPartBase(const MovingPartBase &copy);
 
 public:
-  MovingPartBase(PartGroup *parent, const std::string &name);
+  MovingPartBase(PartGroup *parent, std::string name);
 
 PUBLISHED:
   INLINE int get_max_bound() const;
@@ -75,7 +76,7 @@ protected:
   virtual void determine_effective_channels(const CycleData *root_cdata);
 
   // This is the vector of all channels bound to this part.
-  typedef pvector< PT(AnimChannelBase) > Channels;
+  typedef small_vector< PT(AnimChannelBase) > Channels;
   Channels _channels;
 
   // This is the single channel that has an effect on this part, as determined

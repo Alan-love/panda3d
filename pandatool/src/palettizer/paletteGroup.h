@@ -44,7 +44,7 @@ class PaletteGroup : public TypedWritable, public Namable {
 public:
   PaletteGroup();
 
-  void set_dirname(const std::string &dirname);
+  void set_dirname(std::string dirname);
   bool has_dirname() const;
   const std::string &get_dirname() const;
 
@@ -115,7 +115,7 @@ public:
   virtual void finalize(BamReader *manager);
 
 protected:
-  static TypedWritable *make_PaletteGroup(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
   void fillin(DatagramIterator &scan, BamReader *manager);
 
 private:

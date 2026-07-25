@@ -28,6 +28,8 @@ class EXPCL_PANDA_AUDIO NullAudioSound : public AudioSound {
 public:
   ~NullAudioSound();
 
+  AudioSound *make_copy() const;
+
   void play();
   void stop();
 
@@ -36,6 +38,9 @@ public:
 
   void set_loop_count(unsigned long);
   unsigned long get_loop_count() const;
+
+  void set_loop_start(PN_stdfloat);
+  PN_stdfloat get_loop_start() const;
 
   void set_time(PN_stdfloat);
   PN_stdfloat get_time() const;
@@ -52,7 +57,7 @@ public:
   void set_active(bool);
   bool get_active() const;
 
-  void set_finished_event(const std::string& event);
+  void set_finished_event(std::string event);
   const std::string& get_finished_event() const;
 
   const std::string& get_name() const;

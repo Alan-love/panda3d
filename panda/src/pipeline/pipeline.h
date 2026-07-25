@@ -37,7 +37,7 @@ struct PipelineCyclerTrueImpl;
  */
 class EXPCL_PANDA_PIPELINE Pipeline : public Namable {
 public:
-  Pipeline(const std::string &name, int num_stages);
+  Pipeline(std::string name, int num_stages);
   ~Pipeline();
 
   INLINE static Pipeline *get_render_pipeline();
@@ -50,6 +50,7 @@ public:
 
 #ifdef THREADED_PIPELINE
   void add_cycler(PipelineCyclerTrueImpl *cycler);
+  void add_cycler(PipelineCyclerTrueImpl *cycler, bool dirty);
   void add_dirty_cycler(PipelineCyclerTrueImpl *cycler);
   void remove_cycler(PipelineCyclerTrueImpl *cycler);
 

@@ -36,7 +36,7 @@ protected:
   AnimChannelMatrixDynamic(AnimGroup *parent, const AnimChannelMatrixDynamic &copy);
 
 public:
-  AnimChannelMatrixDynamic(const std::string &name);
+  AnimChannelMatrixDynamic(std::string name);
 
   virtual bool has_changed(int last_frame, double last_frac,
                            int this_frame, double this_frac);
@@ -78,7 +78,7 @@ public:
   virtual int complete_pointers(TypedWritable **plist, BamReader *manager);
   void fillin(DatagramIterator &scan, BamReader *manager);
 
-  static TypedWritable *make_AnimChannelMatrixDynamic(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 public:
   virtual TypeHandle get_type() const {

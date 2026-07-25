@@ -34,12 +34,12 @@ LightReMutex x11GraphicsPipe::_x_mutex;
  *
  */
 x11GraphicsPipe::
-x11GraphicsPipe(const std::string &display) :
-  _have_xrandr(false),
+x11GraphicsPipe(std::string display) :
   _xcursor_size(-1),
+  _have_xrandr(false),
   _XF86DGADirectVideo(nullptr) {
 
-  std::string display_spec = display;
+  std::string display_spec = std::move(display);
   if (display_spec.empty()) {
     display_spec = display_cfg;
   }
@@ -65,6 +65,20 @@ x11GraphicsPipe(const std::string &display) :
   // since all of the internal Panda code assumes this--we need a decimal
   // point to mean a decimal point.
   setlocale(LC_NUMERIC, "C");
+
+  // Also save the startup ID.  We are required to unset it by the FreeDesktop
+  // specification so that it is not propagated to child processes.
+  {
+    char *startup_id = getenv("DESKTOP_STARTUP_ID");
+    if (startup_id != nullptr) {
+      _startup_id.assign(startup_id);
+      if (x11display_cat.is_debug()) {
+        x11display_cat.debug()
+          << "Got desktop startup ID " << _startup_id << "\n";
+      }
+      unsetenv("DESKTOP_STARTUP_ID");
+    }
+  }
 
   _is_valid = false;
   _supported_types = OT_window | OT_buffer | OT_texture_buffer;
@@ -107,15 +121,22 @@ x11GraphicsPipe(const std::string &display) :
   _is_valid = true;
 
   // Dynamically load the xf86dga extension.
-  void *xf86dga = dlopen("libXxf86dga.so.1", RTLD_NOW | RTLD_LOCAL);
-  if (xf86dga != nullptr) {
+  if (!x_support_xf86dga) {
+    _XF86DGADirectVideo = nullptr;
+    if (x11display_cat.is_debug()) {
+      x11display_cat.debug()
+        << "XFree86-DGA support is disabled"
+        << "; relative mouse mode may not work.\n";
+    }
+  } else if (void *xf86dga = dlopen("libXxf86dga.so.1", RTLD_NOW | RTLD_LOCAL)) {
     pfn_XF86DGAQueryVersion _XF86DGAQueryVersion = (pfn_XF86DGAQueryVersion)dlsym(xf86dga, "XF86DGAQueryVersion");
     _XF86DGADirectVideo = (pfn_XF86DGADirectVideo)dlsym(xf86dga, "XF86DGADirectVideo");
 
     int major_ver, minor_ver;
     if (_XF86DGAQueryVersion == nullptr || _XF86DGADirectVideo == nullptr) {
       x11display_cat.warning()
-        << "libXxf86dga.so.1 does not provide required functions; relative mouse mode may not work.\n";
+        << "libXxf86dga.so.1 does not provide required functions"
+        << "; relative mouse mode may not work.\n";
 
     } else if (!_XF86DGAQueryVersion(_display, &major_ver, &minor_ver)) {
       _XF86DGADirectVideo = nullptr;
@@ -124,13 +145,19 @@ x11GraphicsPipe(const std::string &display) :
     _XF86DGADirectVideo = nullptr;
     if (x11display_cat.is_debug()) {
       x11display_cat.debug()
-        << "cannot dlopen libXxf86dga.so.1; relative mouse mode may not work.\n";
+        << "cannot dlopen libXxf86dga.so.1"
+        << "; relative mouse mode may not work.\n";
     }
   }
 
   // Dynamically load the XCursor extension.
-  void *xcursor = dlopen("libXcursor.so.1", RTLD_NOW | RTLD_LOCAL);
-  if (xcursor != nullptr) {
+  if (!x_support_xcursor) {
+    _xcursor_size = -1;
+    if (x11display_cat.is_debug()) {
+      x11display_cat.debug()
+        << "XCursor support is disabled; cursor changing will not work.\n";
+    }
+  } else if (void *xcursor = dlopen("libXcursor.so.1", RTLD_NOW | RTLD_LOCAL)) {
     pfn_XcursorGetDefaultSize _XcursorGetDefaultSize = (pfn_XcursorGetDefaultSize)dlsym(xcursor, "XcursorGetDefaultSize");
     _XcursorXcFileLoadImages = (pfn_XcursorXcFileLoadImages)dlsym(xcursor, "XcursorXcFileLoadImages");
     _XcursorImagesLoadCursor = (pfn_XcursorImagesLoadCursor)dlsym(xcursor, "XcursorImagesLoadCursor");
@@ -161,8 +188,14 @@ x11GraphicsPipe(const std::string &display) :
   }
 
   // Dynamically load the XRandr extension.
-  void *xrandr = dlopen("libXrandr.so.2", RTLD_NOW | RTLD_LOCAL);
-  if (xrandr != nullptr) {
+  if (!x_support_xrandr) {
+    _have_xrandr = false;
+    if (x11display_cat.is_debug()) {
+      x11display_cat.debug()
+        << "XRandR support is disabled; resolution setting will not work.\n";
+    }
+  }
+  else if (void *xrandr = dlopen("libXrandr.so.2", RTLD_NOW | RTLD_LOCAL)) {
     pfn_XRRQueryExtension _XRRQueryExtension = (pfn_XRRQueryExtension)dlsym(xrandr, "XRRQueryExtension");
     pfn_XRRQueryVersion _XRRQueryVersion = (pfn_XRRQueryVersion)dlsym(xrandr, "XRRQueryVersion");
 
@@ -224,7 +257,8 @@ x11GraphicsPipe(const std::string &display) :
 
   // Dynamically load the XInput2 extension.
   int ev, err;
-  if (XQueryExtension(_display, "XInputExtension", &_xi_opcode, &ev, &err)) {
+  if (x_support_xinput2 &&
+      XQueryExtension(_display, "XInputExtension", &_xi_opcode, &ev, &err)) {
     void *xi = dlopen("libXi.so.6", RTLD_NOW | RTLD_LOCAL);
     if (xi != nullptr) {
       pfn_XIQueryVersion _XIQueryVersion = (pfn_XIQueryVersion)dlsym(xi, "XIQueryVersion");
@@ -258,6 +292,8 @@ x11GraphicsPipe(const std::string &display) :
           << "cannot dlopen libXi.so.1; relative mouse mode will not work.\n";
       }
     }
+  } else {
+    _XISelectEvents = nullptr;
   }
 
   // Use Xrandr to fill in the supported resolution list.
@@ -269,10 +305,24 @@ x11GraphicsPipe(const std::string &display) :
         x11display_cat.debug()
           << "Using XRRScreenResources to obtain display modes\n";
       }
+
+      // Query current configuration, we just grab the first CRTC for now,
+      // since we don't have a way to represent multiple monitors.
+      RRMode current_mode_id = 0;
+      if (res->ncrtc > 0) {
+        if (auto info = get_crtc_info(res.get(), res->crtcs[0])) {
+          current_mode_id = info->mode;
+        }
+      }
+
       _display_information->_total_display_modes = res->nmode;
       _display_information->_display_mode_array = new DisplayMode[res->nmode];
       for (int i = 0; i < res->nmode; ++i) {
         XRRModeInfo &mode = res->modes[i];
+
+        if (mode.id == current_mode_id) {
+          _display_information->_current_display_mode_index = i;
+        }
 
         DisplayMode *dm = _display_information->_display_mode_array + i;
         dm->width = mode.width;
@@ -375,20 +425,26 @@ x11GraphicsPipe(const std::string &display) :
   }
 
   // Get some X atom numbers.
+  _utf8_string = XInternAtom(_display, "UTF8_STRING", false);
   _wm_delete_window = XInternAtom(_display, "WM_DELETE_WINDOW", false);
-  _net_wm_pid = XInternAtom(_display, "_NET_WM_PID", false);
-  _net_wm_window_type = XInternAtom(_display, "_NET_WM_WINDOW_TYPE", false);
-  _net_wm_window_type_splash = XInternAtom(_display, "_NET_WM_WINDOW_TYPE_SPLASH", false);
-  _net_wm_window_type_fullscreen = XInternAtom(_display, "_NET_WM_WINDOW_TYPE_FULLSCREEN", false);
-  _net_wm_state = XInternAtom(_display, "_NET_WM_STATE", false);
-  _net_wm_state_fullscreen = XInternAtom(_display, "_NET_WM_STATE_FULLSCREEN", false);
-  _net_wm_state_above = XInternAtom(_display, "_NET_WM_STATE_ABOVE", false);
-  _net_wm_state_below = XInternAtom(_display, "_NET_WM_STATE_BELOW", false);
-  _net_wm_state_add = XInternAtom(_display, "_NET_WM_STATE_ADD", false);
-  _net_wm_state_remove = XInternAtom(_display, "_NET_WM_STATE_REMOVE", false);
+  _net_startup_id = XInternAtom(_display, "_NET_STARTUP_ID", false);
+  _net_startup_info = XInternAtom(_display, "_NET_STARTUP_INFO", false);
+  _net_startup_info_begin = XInternAtom(_display, "_NET_STARTUP_INFO_BEGIN", false);
   _net_wm_bypass_compositor = XInternAtom(_display, "_NET_WM_BYPASS_COMPOSITOR", false);
-  _net_wm_state_maximized_vert = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
+  _net_wm_name = XInternAtom(_display, "_NET_WM_NAME", false);
+  _net_wm_pid = XInternAtom(_display, "_NET_WM_PID", false);
+  _net_wm_ping = XInternAtom(_display, "_NET_WM_PING", false);
+  _net_wm_state = XInternAtom(_display, "_NET_WM_STATE", false);
+  _net_wm_state_above = XInternAtom(_display, "_NET_WM_STATE_ABOVE", false);
+  _net_wm_state_add = XInternAtom(_display, "_NET_WM_STATE_ADD", false);
+  _net_wm_state_below = XInternAtom(_display, "_NET_WM_STATE_BELOW", false);
+  _net_wm_state_fullscreen = XInternAtom(_display, "_NET_WM_STATE_FULLSCREEN", false);
   _net_wm_state_maximized_horz = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
+  _net_wm_state_maximized_vert = XInternAtom(_display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
+  _net_wm_state_remove = XInternAtom(_display, "_NET_WM_STATE_REMOVE", false);
+  _net_wm_window_type = XInternAtom(_display, "_NET_WM_WINDOW_TYPE", false);
+  _net_wm_window_type_fullscreen = XInternAtom(_display, "_NET_WM_WINDOW_TYPE_FULLSCREEN", false);
+  _net_wm_window_type_splash = XInternAtom(_display, "_NET_WM_WINDOW_TYPE_SPLASH", false);
 }
 
 /**
@@ -403,6 +459,82 @@ x11GraphicsPipe::
   if (_display) {
     XCloseDisplay(_display);
   }
+}
+
+/**
+ * Tells the window manager that the launch sequence with the indicated startup
+ * ID has finished.  Will only send it once, and only if DESKTOP_STARTUP_ID was
+ * passed in as an environment variable.
+ */
+void x11GraphicsPipe::
+send_startup_notification() {
+  if (_sent_startup_notification || _startup_id.empty()) {
+    return;
+  }
+
+  // Allocate enough room for the message, with room for escape characters.
+  char *message = (char *)alloca(_startup_id.size() * 2 + 14);
+  memcpy(message, "remove: ID=\"", 12);
+
+  char *p = message + 12;
+  for (char c : _startup_id) {
+    if (c == '"' || c == '\\') {
+      *p++ = '\\';
+    }
+    *p++ = c;
+  }
+  *p++ = '\"';
+  *p++ = '\0';
+
+  if (x11display_cat.is_debug()) {
+    x11display_cat.debug()
+      << "Sending startup info message: " << message << "\n";
+  }
+
+  // It doesn't *strictly* seem to be necessary to create a window for this
+  // (just passing in the root window works too) but the spec says we should
+  // and GTK does it too, so why not?
+  XSetWindowAttributes attrs;
+  attrs.override_redirect = True;
+  attrs.event_mask = PropertyChangeMask | StructureNotifyMask;
+  X11_Window xwin = XCreateWindow(_display, _root, -100, -100, 1, 1, 0,
+                                  CopyFromParent, CopyFromParent, CopyFromParent,
+                                  CWOverrideRedirect | CWEventMask, &attrs);
+
+  XEvent xevent;
+  xevent.xclient.type = ClientMessage;
+  xevent.xclient.message_type = _net_startup_info_begin;
+  xevent.xclient.display = _display;
+  xevent.xclient.window = xwin;
+  xevent.xclient.format = 8;
+
+  const char *src = message;
+  const char *src_end = message + strlen(message) + 1;
+
+  char *dest, *dest_end;
+  while (src != src_end) {
+    dest = &xevent.xclient.data.b[0];
+    dest_end = dest + 20;
+
+    while (dest != dest_end && src != src_end) {
+      *dest = *src;
+      ++dest;
+      ++src;
+    }
+
+    while (dest != dest_end) {
+      *dest = '\0';
+      ++dest;
+    }
+
+    XSendEvent(_display, _root, False, PropertyChangeMask, &xevent);
+    xevent.xclient.message_type = _net_startup_info;
+  }
+
+  XDestroyWindow(_display, xwin);
+  XFlush(_display);
+
+  _sent_startup_notification = true;
 }
 
 /**
@@ -425,7 +557,7 @@ enable_raw_mouse() {
     XISetMask(mask, XI_RawMotion);
 
     if (_XISelectEvents(_display, _root, &event_mask, 1) == Success) {
-      if (x11display_cat.info()) {
+      if (x11display_cat.is_info()) {
         x11display_cat.info()
           << "Enabled raw mouse events using XInput2 extension\n";
       }

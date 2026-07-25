@@ -25,13 +25,13 @@ TypeHandle TinyGraphicsBuffer::_type_handle;
  */
 TinyGraphicsBuffer::
 TinyGraphicsBuffer(GraphicsEngine *engine, GraphicsPipe *pipe,
-                   const std::string &name,
+                   std::string name,
                    const FrameBufferProperties &fb_prop,
                    const WindowProperties &win_prop,
                    int flags,
                    GraphicsStateGuardian *gsg,
                    GraphicsOutput *host) :
-  GraphicsBuffer(engine, pipe, name, fb_prop, win_prop, flags, gsg, host)
+  GraphicsBuffer(engine, pipe, std::move(name), fb_prop, win_prop, flags, gsg, host)
 {
   _frame_buffer = nullptr;
 }
@@ -90,6 +90,15 @@ end_frame(FrameMode mode, Thread *current_thread) {
 }
 
 /**
+ *
+ */
+void TinyGraphicsBuffer::
+set_size(int x, int y) {
+  GraphicsBuffer::set_size(x, y);
+  create_frame_buffer();
+}
+
+/**
  * Closes the buffer right now.  Called from the buffer thread.
  */
 void TinyGraphicsBuffer::
@@ -126,6 +135,8 @@ open_buffer() {
       << "Could not create frame buffer.\n";
     return false;
   }
+
+  _fb_properties.set_depth_bits(ZB_Z_BITS);
 
   tinygsg->_current_frame_buffer = _frame_buffer;
 

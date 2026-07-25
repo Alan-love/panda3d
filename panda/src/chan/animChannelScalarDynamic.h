@@ -36,7 +36,7 @@ protected:
   AnimChannelScalarDynamic(AnimGroup *parent, const AnimChannelScalarDynamic &copy);
 
 public:
-  AnimChannelScalarDynamic(const std::string &name);
+  AnimChannelScalarDynamic(std::string name);
 
   virtual bool has_changed(int last_frame, double last_frac,
                            int this_frame, double this_frac);
@@ -72,7 +72,7 @@ public:
   virtual int complete_pointers(TypedWritable **plist, BamReader *manager);
   void fillin(DatagramIterator &scan, BamReader *manager);
 
-  static TypedWritable *make_AnimChannelScalarDynamic(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 public:
   virtual TypeHandle get_type() const {

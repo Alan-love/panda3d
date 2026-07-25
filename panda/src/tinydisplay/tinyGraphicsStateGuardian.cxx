@@ -22,6 +22,7 @@
 #include "directionalLight.h"
 #include "spotlight.h"
 #include "depthWriteAttrib.h"
+#include "depthBiasAttrib.h"
 #include "depthOffsetAttrib.h"
 #include "colorWriteAttrib.h"
 #include "alphaTestAttrib.h"
@@ -94,6 +95,7 @@ reset() {
   _inv_state_mask.clear_bit(ColorAttrib::get_class_slot());
   _inv_state_mask.clear_bit(ColorScaleAttrib::get_class_slot());
   _inv_state_mask.clear_bit(CullFaceAttrib::get_class_slot());
+  _inv_state_mask.clear_bit(DepthBiasAttrib::get_class_slot());
   _inv_state_mask.clear_bit(DepthOffsetAttrib::get_class_slot());
   _inv_state_mask.clear_bit(RenderModeAttrib::get_class_slot());
   _inv_state_mask.clear_bit(RescaleNormalAttrib::get_class_slot());
@@ -229,10 +231,9 @@ clear(DrawableRegion *clearable) {
   }
 
   bool clear_z = false;
-  int z = 0;
+  ZPOINT z = 0;
   if (clearable->get_clear_depth_active()) {
-    // We ignore the specified depth clear value, since we don't support
-    // alternate depth compare functions anyway.
+    z = (ZPOINT)((1.0f - clearable->get_clear_depth()) * (1 << ZB_Z_BITS));
     clear_z = true;
   }
 
@@ -279,6 +280,18 @@ prepare_display_region(DisplayRegionPipelineReader *dr) {
   _c->viewport.xsize = xsize;
   _c->viewport.ysize = ysize;
   set_scissor(0.0f, 1.0f, 0.0f, 1.0f);
+
+  PN_stdfloat dr_near = 0.0f;
+  PN_stdfloat dr_far = 1.0f;
+  dr->get_depth_range(dr_near, dr_far);
+
+  if (dr_near == 0.0f && dr_far == 1.0f) {
+    _c->has_zrange = false;
+  } else {
+    _c->has_zrange = true;
+    _c->zmin = dr_near;
+    _c->zrange = dr_far - dr_near;
+  }
 
   nassertv(xmin >= 0 && xmin < _c->zb->xsize &&
            ymin >= 0 && ymin < _c->zb->ysize &&
@@ -685,8 +698,6 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
     needs_normal = false;
   }
 
-  bool lighting_enabled = (needs_normal && _c->lighting_enabled);
-
   for (i = 0; i < num_used_vertices; ++i) {
     GLVertex *v = &_vertices[i];
     const LVecBase4 &d = rvertex.get_data4();
@@ -723,12 +734,14 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
 
     v->color = _c->current_color;
 
-    if (lighting_enabled) {
-      const LVecBase3 &d = rnormal.get_data3();
-      _c->current_normal.v[0] = d[0];
-      _c->current_normal.v[1] = d[1];
-      _c->current_normal.v[2] = d[2];
-      _c->current_normal.v[3] = 0.0f;
+    if (_c->lighting_enabled) {
+      if (needs_normal) {
+        const LVecBase3 &d = rnormal.get_data3();
+        _c->current_normal.v[0] = d[0];
+        _c->current_normal.v[1] = d[1];
+        _c->current_normal.v[2] = d[2];
+        _c->current_normal.v[3] = 0.0f;
+      }
 
       gl_vertex_transform(_c, v);
       gl_shade_vertex(_c, v);
@@ -757,95 +770,99 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
 
   int color_write_state = 0;  // cstore
 
-  const ColorWriteAttrib *target_color_write = DCAST(ColorWriteAttrib, _target_rs->get_attrib_def(ColorWriteAttrib::get_class_slot()));
+  const ColorWriteAttrib *target_color_write;
+  _target_rs->get_attrib_def(target_color_write);
   unsigned int color_channels =
     target_color_write->get_channels() & _color_write_mask;
+  unsigned int rgb_channels = color_channels & ColorWriteAttrib::C_rgb;
 
-  if (color_channels == ColorWriteAttrib::C_all) {
-    if (srgb_blend) {
-      color_write_state = 4;  // csstore
-    } else {
-      color_write_state = 0;  // cstore
-    }
-  } else {
-    // Implement a color mask.
-    int op_a = get_color_blend_op(ColorBlendAttrib::O_one);
-    int op_b = get_color_blend_op(ColorBlendAttrib::O_zero);
-
-    if (srgb_blend) {
-      _c->zb->store_pix_func = store_pixel_funcs_sRGB[op_a][op_b][color_channels];
-    } else {
-      _c->zb->store_pix_func = store_pixel_funcs[op_a][op_b][color_channels];
-    }
-    color_write_state = 2;   // cgeneral
-  }
-
-  const TransparencyAttrib *target_transparency = DCAST(TransparencyAttrib, _target_rs->get_attrib_def(TransparencyAttrib::get_class_slot()));
-  switch (target_transparency->get_mode()) {
-  case TransparencyAttrib::M_alpha:
-  case TransparencyAttrib::M_dual:
-    if (color_channels == ColorWriteAttrib::C_all) {
-      if (srgb_blend) {
-        color_write_state = 5;    // csblend
-      } else {
-        color_write_state = 1;    // cblend
-      }
-    } else {
-      // Implement a color mask, with alpha blending.
-      int op_a = get_color_blend_op(ColorBlendAttrib::O_incoming_alpha);
-      int op_b = get_color_blend_op(ColorBlendAttrib::O_one_minus_incoming_alpha);
-
-      if (srgb_blend) {
-        _c->zb->store_pix_func = store_pixel_funcs_sRGB[op_a][op_b][color_channels];
-      } else {
-        _c->zb->store_pix_func = store_pixel_funcs[op_a][op_b][color_channels];
-      }
-      color_write_state = 2;   // cgeneral
-    }
-    break;
-
-  case TransparencyAttrib::M_premultiplied_alpha:
-    {
-      // Implement a color mask, with pre-multiplied alpha blending.
-      int op_a = get_color_blend_op(ColorBlendAttrib::O_one);
-      int op_b = get_color_blend_op(ColorBlendAttrib::O_one_minus_incoming_alpha);
-
-      if (srgb_blend) {
-        _c->zb->store_pix_func = store_pixel_funcs_sRGB[op_a][op_b][color_channels];
-      } else {
-        _c->zb->store_pix_func = store_pixel_funcs[op_a][op_b][color_channels];
-      }
-      color_write_state = 2;   // cgeneral
-    }
-    break;
-
-  default:
-    break;
-  }
-
-  const ColorBlendAttrib *target_color_blend = DCAST(ColorBlendAttrib, _target_rs->get_attrib_def(ColorBlendAttrib::get_class_slot()));
-  if (target_color_blend->get_mode() == ColorBlendAttrib::M_add) {
-    // If we have a color blend set that we can support, it overrides the
-    // transparency set.
-    LColor c = target_color_blend->get_color();
-    _c->zb->blend_r = (int)(c[0] * ZB_POINT_RED_MAX);
-    _c->zb->blend_g = (int)(c[1] * ZB_POINT_GREEN_MAX);
-    _c->zb->blend_b = (int)(c[2] * ZB_POINT_BLUE_MAX);
-    _c->zb->blend_a = (int)(c[3] * ZB_POINT_ALPHA_MAX);
-
-    int op_a = get_color_blend_op(target_color_blend->get_operand_a());
-    int op_b = get_color_blend_op(target_color_blend->get_operand_b());
-
-    if (srgb_blend) {
-      _c->zb->store_pix_func = store_pixel_funcs_sRGB[op_a][op_b][color_channels];
-    } else {
-      _c->zb->store_pix_func = store_pixel_funcs[op_a][op_b][color_channels];
-    }
-    color_write_state = 2;     // cgeneral
-  }
+  const ColorBlendAttrib *target_color_blend;
+  _target_rs->get_attrib_def(target_color_blend);
 
   if (color_channels == ColorWriteAttrib::C_off) {
     color_write_state = 3;    // coff
+  }
+  else if (target_color_blend->get_mode() != ColorBlendAttrib::M_none) {
+    // If we have a color blend set that we can support, it overrides the
+    // transparency set.
+
+    int rgb_mode = get_color_blend_mode(target_color_blend->get_mode());
+    int alpha_mode;
+    if (color_channels & ColorWriteAttrib::C_alpha) {
+      alpha_mode = get_color_blend_mode(target_color_blend->get_alpha_mode());
+    } else {
+      // Disabled alpha write is encoded as a separate alpha mode, to cut down
+      // on redundancy in the store_pixel table.
+      alpha_mode = 3;
+    }
+
+    LColor c = target_color_blend->get_color();
+    unsigned int cr = (int)(c[0] * ZB_POINT_RED_MAX);
+    unsigned int cg = (int)(c[1] * ZB_POINT_GREEN_MAX);
+    unsigned int cb = (int)(c[2] * ZB_POINT_BLUE_MAX);
+    unsigned int ca = (int)(c[3] * ZB_POINT_ALPHA_MAX);
+
+    setup_color_blend(_c->zb->blenda, target_color_blend->get_operand_a(),
+                      target_color_blend->get_alpha_operand_a(),
+                      cr, cg, cb, ca);
+    setup_color_blend(_c->zb->blendb, target_color_blend->get_operand_b(),
+                      target_color_blend->get_alpha_operand_b(),
+                      cr, cg, cb, ca);
+
+    _c->zb->store_pix_func = store_pixel_funcs[rgb_mode][alpha_mode][rgb_channels][srgb_blend];
+    color_write_state = 2;     // cgeneral
+  }
+  else {
+    const TransparencyAttrib *target_transparency;
+    _target_rs->get_attrib_def(target_transparency);
+
+    switch (target_transparency->get_mode()) {
+    case TransparencyAttrib::M_alpha:
+    case TransparencyAttrib::M_dual:
+      if (color_channels == ColorWriteAttrib::C_all) {
+        if (srgb_blend) {
+          color_write_state = 5;    // csblend
+        } else {
+          color_write_state = 1;    // cblend
+        }
+      } else {
+        // Implement a color mask, with alpha blending.
+        setup_color_blend(_c->zb->blenda, ColorBlendAttrib::O_incoming_alpha, ColorBlendAttrib::O_one);
+        setup_color_blend(_c->zb->blendb, ColorBlendAttrib::O_one_minus_incoming_alpha, ColorBlendAttrib::O_one_minus_incoming_alpha);
+        int alpha_mode = (color_channels & ColorWriteAttrib::C_alpha) ? 0 : 3;
+        _c->zb->store_pix_func = store_pixel_funcs[0][alpha_mode][rgb_channels][srgb_blend];
+        color_write_state = 2;   // cgeneral
+      }
+      break;
+
+    case TransparencyAttrib::M_premultiplied_alpha:
+      {
+        // Implement a color mask, with pre-multiplied alpha blending.
+        setup_color_blend(_c->zb->blenda, ColorBlendAttrib::O_one, ColorBlendAttrib::O_one);
+        setup_color_blend(_c->zb->blendb, ColorBlendAttrib::O_one_minus_incoming_alpha, ColorBlendAttrib::O_one_minus_incoming_alpha);
+        int alpha_mode = (color_channels & ColorWriteAttrib::C_alpha) ? 0 : 3;
+        _c->zb->store_pix_func = store_pixel_funcs[0][alpha_mode][rgb_channels][srgb_blend];
+        color_write_state = 2;   // cgeneral
+      }
+      break;
+
+    default:
+      if (color_channels == ColorWriteAttrib::C_all) {
+        if (srgb_blend) {
+          color_write_state = 4;  // csstore
+        } else {
+          color_write_state = 0;  // cstore
+        }
+      } else {
+        // Implement a color mask.
+        setup_color_blend(_c->zb->blenda, ColorBlendAttrib::O_one, ColorBlendAttrib::O_one);
+        setup_color_blend(_c->zb->blendb, ColorBlendAttrib::O_zero, ColorBlendAttrib::O_zero);
+        int alpha_mode = (color_channels & ColorWriteAttrib::C_alpha) ? 0 : 3;
+        _c->zb->store_pix_func = store_pixel_funcs[0][alpha_mode][rgb_channels][srgb_blend];
+        color_write_state = 2;   // cgeneral
+      }
+      break;
+    }
   }
 
   int alpha_test_state = 0;   // anone
@@ -875,14 +892,15 @@ begin_draw_primitives(const GeomPipelineReader *geom_reader,
   int depth_test_state = 1;    // zless
   _c->depth_test = 1;  // set this for ZB_line
   const DepthTestAttrib *target_depth_test = DCAST(DepthTestAttrib, _target_rs->get_attrib_def(DepthTestAttrib::get_class_slot()));
-  if (target_depth_test->get_mode() == DepthTestAttrib::M_none) {
+  if (target_depth_test->get_mode() == DepthTestAttrib::M_none ||
+      target_depth_test->get_mode() == DepthTestAttrib::M_always) {
     depth_test_state = 0;      // zless
     _c->depth_test = 0;
   }
 
   const ShadeModelAttrib *target_shade_model = DCAST(ShadeModelAttrib, _target_rs->get_attrib_def(ShadeModelAttrib::get_class_slot()));
   ShadeModelAttrib::Mode shade_model = target_shade_model->get_mode();
-  if (!needs_normal && !needs_color) {
+  if (!needs_color && !_c->lighting_enabled) {
     // With no per-vertex lighting, and no per-vertex colors, we might as well
     // use the flat shading model.
     shade_model = ShadeModelAttrib::M_flat;
@@ -1352,14 +1370,19 @@ framebuffer_copy_to_texture(Texture *tex, int view, int z,
   int xo, yo, w, h;
   dr->get_region_pixels_i(xo, yo, w, h);
 
-  tex->setup_2d_texture(w, h, Texture::T_unsigned_byte, Texture::F_rgba);
+  Texture::Format format = Texture::F_rgba;
+  if (_current_properties->get_srgb_color()) {
+    format = Texture::F_srgb_alpha;
+  }
 
-  TextureContext *tc = tex->prepare_now(view, get_prepared_objects(), this);
+  tex->setup_2d_texture(w, h, Texture::T_unsigned_byte, format);
+
+  TextureContext *tc = tex->prepare_now(get_prepared_objects(), this);
   nassertr(tc != nullptr, false);
   TinyTextureContext *gtc = DCAST(TinyTextureContext, tc);
 
   GLTexture *gltex = &gtc->_gltex;
-  if (!setup_gltex(gltex, tex->get_x_size(), tex->get_y_size(), 1)) {
+  if (!setup_gltex(gltex, tex->get_x_size(), tex->get_y_size(), tex->get_num_views(), 1)) {
     return false;
   }
   LColor border_color = tex->get_border_color();
@@ -1369,7 +1392,7 @@ framebuffer_copy_to_texture(Texture *tex, int view, int z,
   gltex->border_color.v[2] = border_color[2];
   gltex->border_color.v[3] = border_color[3];
 
-  PIXEL *ip = gltex->levels[0].pixmap + gltex->xsize * gltex->ysize;
+  PIXEL *ip = gltex->views[view].levels[0].pixmap + gltex->xsize * gltex->ysize;
   PIXEL *fo = _c->zb->pbuf + xo + yo * _c->zb->linesize / PSZB;
   for (int y = 0; y < gltex->ysize; ++y) {
     ip -= gltex->xsize;
@@ -1393,8 +1416,8 @@ framebuffer_copy_to_texture(Texture *tex, int view, int z,
  */
 bool TinyGraphicsStateGuardian::
 framebuffer_copy_to_ram(Texture *tex, int view, int z,
-                        const DisplayRegion *dr,
-                        const RenderBuffer &rb) {
+                        const DisplayRegion *dr, const RenderBuffer &rb,
+                        ScreenshotRequest *request) {
   nassertr(tex != nullptr && dr != nullptr, false);
 
   int xo, yo, w, h;
@@ -1410,8 +1433,18 @@ framebuffer_copy_to_ram(Texture *tex, int view, int z,
     z_size = 1;
   }
 
-  Texture::ComponentType component_type = Texture::T_unsigned_byte;
-  Texture::Format format = Texture::F_rgba;
+  Texture::ComponentType component_type;
+  Texture::Format format;
+  if (rb._buffer_type & RenderBuffer::T_depth) {
+    component_type = Texture::T_unsigned_int;
+    format = Texture::F_depth_component;
+  } else {
+    component_type = Texture::T_unsigned_byte;
+    format = Texture::F_rgba;
+    if (_current_properties->get_srgb_color()) {
+      format = Texture::F_srgb_alpha;
+    }
+  }
 
   if (tex->get_x_size() != w || tex->get_y_size() != h ||
       tex->get_z_size() != z_size ||
@@ -1437,34 +1470,58 @@ framebuffer_copy_to_ram(Texture *tex, int view, int z,
     }
   }
 
-  PIXEL *ip = (PIXEL *)(image_ptr + image_size);
-  PIXEL *fo = _c->zb->pbuf + xo + yo * _c->zb->linesize / PSZB;
-  for (int y = 0; y < h; ++y) {
-    ip -= w;
-#ifndef WORDS_BIGENDIAN
-    // On a little-endian machine, we can copy the whole row at a time.
-    memcpy(ip, fo, w * PSZB);
-#else
-    // On a big-endian machine, we have to reverse the color-component order.
-    const char *source = (const char *)fo;
-    const char *stop = (const char *)fo + w * PSZB;
-    char *dest = (char *)ip;
-    while (source < stop) {
-      char b = source[0];
-      char g = source[1];
-      char r = source[2];
-      char a = source[3];
-      dest[0] = a;
-      dest[1] = r;
-      dest[2] = g;
-      dest[3] = b;
-      dest += 4;
-      source += 4;
+  if (rb._buffer_type & RenderBuffer::T_depth) {
+    size_t dst_stride = tex->get_x_size();
+    unsigned int *dst = (unsigned int *)(image_ptr + image_size);
+    size_t src_stride = _c->zb->xsize;
+    ZPOINT *src = _c->zb->zbuf + xo + src_stride * yo;
+
+    for (int y = 0; y < h; ++y) {
+      dst -= dst_stride;
+      for (int x = 0; x < w; ++x) {
+        ZPOINT z = src[x];
+        if (z == 0) {
+          z = 0xFFFFFFFF;
+        } else {
+          z = (1 << ZB_Z_BITS) - z;
+          z = z << (32 - ZB_Z_BITS);
+        }
+        dst[x] = z;
+      }
     }
+  } else {
+    PIXEL *ip = (PIXEL *)(image_ptr + image_size);
+    PIXEL *fo = _c->zb->pbuf + xo + yo * _c->zb->linesize / PSZB;
+    for (int y = 0; y < h; ++y) {
+      ip -= w;
+#ifndef WORDS_BIGENDIAN
+      // On a little-endian machine, we can copy the whole row at a time.
+      memcpy(ip, fo, w * PSZB);
+#else
+      // On a big-endian machine, we have to reverse the color-component order.
+      const char *source = (const char *)fo;
+      const char *stop = (const char *)fo + w * PSZB;
+      char *dest = (char *)ip;
+      while (source < stop) {
+        char b = source[0];
+        char g = source[1];
+        char r = source[2];
+        char a = source[3];
+        dest[0] = a;
+        dest[1] = r;
+        dest[2] = g;
+        dest[3] = b;
+        dest += 4;
+        source += 4;
+      }
 #endif
-    fo += _c->zb->linesize / PSZB;
+      fo += _c->zb->linesize / PSZB;
+    }
   }
 
+  if (request != nullptr) {
+    request->finish();
+  }
   return true;
 }
 
@@ -1528,11 +1585,15 @@ set_state_and_transform(const RenderState *target,
     _state_mask.set_bit(cull_face_slot);
   }
 
+  int depth_bias_slot = DepthBiasAttrib::get_class_slot();
   int depth_offset_slot = DepthOffsetAttrib::get_class_slot();
-  if (_target_rs->get_attrib(depth_offset_slot) != _state_rs->get_attrib(depth_offset_slot) ||
+  if (_target_rs->get_attrib(depth_bias_slot) != _state_rs->get_attrib(depth_bias_slot) ||
+      _target_rs->get_attrib(depth_offset_slot) != _state_rs->get_attrib(depth_offset_slot) ||
+      !_state_mask.get_bit(depth_bias_slot) ||
       !_state_mask.get_bit(depth_offset_slot)) {
     // PStatTimer timer(_draw_set_state_depth_offset_pcollector);
-    do_issue_depth_offset();
+    do_issue_depth_bias();
+    _state_mask.set_bit(depth_bias_slot);
     _state_mask.set_bit(depth_offset_slot);
   }
 
@@ -1599,7 +1660,7 @@ set_state_and_transform(const RenderState *target,
  * call Texture::prepare().
  */
 TextureContext *TinyGraphicsStateGuardian::
-prepare_texture(Texture *tex, int view) {
+prepare_texture(Texture *tex) {
   switch (tex->get_texture_type()) {
   case Texture::TT_1d_texture:
   case Texture::TT_2d_texture:
@@ -1626,7 +1687,7 @@ prepare_texture(Texture *tex, int view) {
   }
   */
 
-  TinyTextureContext *gtc = new TinyTextureContext(_prepared_objects, tex, view);
+  TinyTextureContext *gtc = new TinyTextureContext(_prepared_objects, tex);
 
   return gtc;
 }
@@ -1649,7 +1710,7 @@ update_texture(TextureContext *tc, bool force) {
 
   GLTexture *gltex = &gtc->_gltex;
 
-  if (gtc->was_image_modified() || gltex->num_levels == 0) {
+  if (gtc->was_image_modified() || gltex->num_views == 0 || gltex->num_levels == 0) {
     // If the texture image was modified, reload the texture.
     Texture *tex = gtc->get_texture();
     bool okflag = upload_texture(gtc, force, tex->uses_mipmaps());
@@ -1675,7 +1736,7 @@ update_texture(TextureContext *tc, bool force) {
  * (and if get_incomplete_render() is true).
  */
 bool TinyGraphicsStateGuardian::
-update_texture(TextureContext *tc, bool force, int stage_index, bool uses_mipmaps) {
+update_texture(TextureContext *tc, int view, bool force, int stage_index, bool uses_mipmaps) {
   if (!update_texture(tc, force)) {
     return false;
   }
@@ -1696,8 +1757,15 @@ update_texture(TextureContext *tc, bool force, int stage_index, bool uses_mipmap
 
   _c->current_textures[stage_index] = gltex;
 
+  if (view < 0) {
+    view = 0;
+  }
+  if (view >= gltex->num_views) {
+    view = gltex->num_views - 1;
+  }
+
   ZTextureDef *texture_def = &_c->zb->current_textures[stage_index];
-  texture_def->levels = gltex->levels;
+  texture_def->levels = gltex->views[view].levels;
   texture_def->s_max = gltex->s_max;
   texture_def->t_max = gltex->t_max;
 
@@ -2052,13 +2120,30 @@ do_issue_rescale_normal() {
  *
  */
 void TinyGraphicsStateGuardian::
-do_issue_depth_offset() {
-  const DepthOffsetAttrib *target_depth_offset = DCAST(DepthOffsetAttrib, _target_rs->get_attrib_def(DepthOffsetAttrib::get_class_slot()));
+do_issue_depth_bias() {
+  const DepthOffsetAttrib *target_depth_offset;
+  _target_rs->get_attrib_def(target_depth_offset);
   int offset = target_depth_offset->get_offset();
-  _c->zbias = offset;
+
+  const DepthBiasAttrib *target_depth_bias;
+  if (_target_rs->get_attrib(target_depth_bias)) {
+    PN_stdfloat constant_factor = target_depth_bias->get_constant_factor();
+
+    _c->zbias = (int)(((PN_stdfloat)offset - constant_factor) * (1 << (ZB_POINT_Z_FRAC_BITS + 4)));
+  } else {
+    _c->zbias = offset << (ZB_POINT_Z_FRAC_BITS + 4);
+  }
+
+  PN_stdfloat dr_near = 0.0f;
+  PN_stdfloat dr_far = 1.0f;
+  if (_current_display_region != nullptr) {
+    _current_display_region->get_depth_range(dr_near, dr_far);
+  }
 
   PN_stdfloat min_value = target_depth_offset->get_min_value();
   PN_stdfloat max_value = target_depth_offset->get_max_value();
+  min_value = dr_far * min_value + dr_near * (1 - min_value);
+  max_value = dr_far * max_value + dr_near * (1 - max_value);
   if (min_value == 0.0f && max_value == 1.0f) {
     _c->has_zrange = false;
   } else {
@@ -2152,7 +2237,7 @@ do_issue_texture() {
     nassertv(texture != nullptr);
 
     int view = get_current_tex_view_offset() + stage->get_tex_view_offset();
-    TextureContext *tc = texture->prepare_now(view, _prepared_objects, this);
+    TextureContext *tc = texture->prepare_now(_prepared_objects, this);
     if (tc == nullptr) {
       // Something wrong with this texture; skip it.
       return;
@@ -2162,7 +2247,7 @@ do_issue_texture() {
     const SamplerState &sampler = _target_texture->get_on_sampler(stage);
 
     // Then, turn on the current texture mode.
-    if (!update_texture(tc, false, si, sampler.uses_mipmaps())) {
+    if (!update_texture(tc, view, false, si, sampler.uses_mipmaps())) {
       return;
     }
 
@@ -2387,10 +2472,7 @@ upload_texture(TinyTextureContext *gtc, bool force, bool uses_mipmaps) {
       // meantime load a temporary simple image in its place.
       async_reload_texture(gtc);
       if (!tex->has_ram_image()) {
-        if (gtc->was_simple_image_modified()) {
-          return upload_simple_texture(gtc);
-        }
-        return true;
+        return upload_simple_texture(gtc);
       }
     }
   }
@@ -2418,7 +2500,7 @@ upload_texture(TinyTextureContext *gtc, bool force, bool uses_mipmaps) {
       << num_levels << ", uses_mipmaps = " << uses_mipmaps << "\n";
   }
 
-  if (!setup_gltex(gltex, tex->get_x_size(), tex->get_y_size(), num_levels)) {
+  if (!setup_gltex(gltex, tex->get_x_size(), tex->get_y_size(), tex->get_num_views(), num_levels)) {
     return false;
   }
   LColor border_color = tex->get_border_color();
@@ -2432,78 +2514,80 @@ upload_texture(TinyTextureContext *gtc, bool force, bool uses_mipmaps) {
   int xsize = gltex->xsize;
   int ysize = gltex->ysize;
 
-  for (int level = 0; level < gltex->num_levels; ++level) {
-    ZTextureLevel *dest = &gltex->levels[level];
+  for (int view = 0; view < gltex->num_views; ++view) {
+    for (int level = 0; level < gltex->num_levels; ++level) {
+      ZTextureLevel *dest = &gltex->views[view].levels[level];
 
-    if (tex->has_ram_mipmap_image(level)) {
-      switch (tex->get_format()) {
-      case Texture::F_rgb:
-      case Texture::F_rgb5:
-      case Texture::F_rgb8:
-      case Texture::F_rgb12:
-      case Texture::F_rgb332:
-        copy_rgb_image(dest, xsize, ysize, gtc, level);
-        break;
+      if (tex->has_ram_mipmap_image(level)) {
+        switch (tex->get_format()) {
+        case Texture::F_rgb:
+        case Texture::F_rgb5:
+        case Texture::F_rgb8:
+        case Texture::F_rgb12:
+        case Texture::F_rgb332:
+          copy_rgb_image(dest, xsize, ysize, gtc, view, level);
+          break;
 
-      case Texture::F_rgba:
-      case Texture::F_rgbm:
-      case Texture::F_rgba4:
-      case Texture::F_rgba5:
-      case Texture::F_rgba8:
-      case Texture::F_rgba12:
-      case Texture::F_rgba16:
-      case Texture::F_rgba32:
-        copy_rgba_image(dest, xsize, ysize, gtc, level);
-        break;
+        case Texture::F_rgba:
+        case Texture::F_rgbm:
+        case Texture::F_rgba4:
+        case Texture::F_rgba5:
+        case Texture::F_rgba8:
+        case Texture::F_rgba12:
+        case Texture::F_rgba16:
+        case Texture::F_rgba32:
+          copy_rgba_image(dest, xsize, ysize, gtc, view, level);
+          break;
 
-      case Texture::F_luminance:
-        copy_lum_image(dest, xsize, ysize, gtc, level);
-        break;
+        case Texture::F_luminance:
+          copy_lum_image(dest, xsize, ysize, gtc, view, level);
+          break;
 
-      case Texture::F_red:
-        copy_one_channel_image(dest, xsize, ysize, gtc, level, 0);
-        break;
+        case Texture::F_red:
+          copy_one_channel_image(dest, xsize, ysize, gtc, view, level, 0);
+          break;
 
-      case Texture::F_green:
-        copy_one_channel_image(dest, xsize, ysize, gtc, level, 1);
-        break;
+        case Texture::F_green:
+          copy_one_channel_image(dest, xsize, ysize, gtc, view, level, 1);
+          break;
 
-      case Texture::F_blue:
-        copy_one_channel_image(dest, xsize, ysize, gtc, level, 2);
-        break;
+        case Texture::F_blue:
+          copy_one_channel_image(dest, xsize, ysize, gtc, view, level, 2);
+          break;
 
-      case Texture::F_alpha:
-        copy_alpha_image(dest, xsize, ysize, gtc, level);
-        break;
+        case Texture::F_alpha:
+          copy_alpha_image(dest, xsize, ysize, gtc, view, level);
+          break;
 
-      case Texture::F_luminance_alphamask:
-      case Texture::F_luminance_alpha:
-        copy_la_image(dest, xsize, ysize, gtc, level);
-        break;
+        case Texture::F_luminance_alphamask:
+        case Texture::F_luminance_alpha:
+          copy_la_image(dest, xsize, ysize, gtc, view, level);
+          break;
 
-      default:
-        tinydisplay_cat.error()
-          << "Unsupported texture format "
-          << tex->get_format() << "!\n";
-        return false;
+        default:
+          tinydisplay_cat.error()
+            << "Unsupported texture format "
+            << tex->get_format() << "!\n";
+          return false;
+        }
+      } else {
+        // Fill the mipmap with a solid color.
+        LColor scaled = tex->get_clear_color().fmin(LColor(1)).fmax(LColor::zero());
+        scaled *= 255;
+        unsigned int clear = RGBA8_TO_PIXEL((int)scaled[0], (int)scaled[1],
+                                            (int)scaled[2], (int)scaled[3]);
+        unsigned int *dpix = (unsigned int *)dest->pixmap;
+        int pixel_count = xsize * ysize;
+        while (pixel_count-- > 0) {
+          *dpix = clear;
+          ++dpix;
+        }
       }
-    } else {
-      // Fill the mipmap with a solid color.
-      LColor scaled = tex->get_clear_color().fmin(LColor(1)).fmax(LColor::zero());
-      scaled *= 255;
-      unsigned int clear = RGBA8_TO_PIXEL((int)scaled[0], (int)scaled[1],
-                                          (int)scaled[2], (int)scaled[3]);
-      unsigned int *dpix = (unsigned int *)dest->pixmap;
-      int pixel_count = xsize * ysize;
-      while (pixel_count-- > 0) {
-        *dpix = clear;
-        ++dpix;
-      }
+
+      bytecount += xsize * ysize * 4;
+      xsize = max(xsize >> 1, 1);
+      ysize = max(ysize >> 1, 1);
     }
-
-    bytecount += xsize * ysize * 4;
-    xsize = max(xsize >> 1, 1);
-    ysize = max(ysize >> 1, 1);
   }
 
   gtc->update_data_size_bytes(bytecount);
@@ -2545,7 +2629,7 @@ upload_simple_texture(TinyTextureContext *gtc) {
       << "loading simple image for " << tex->get_name() << "\n";
   }
 
-  if (!setup_gltex(gltex, width, height, 1)) {
+  if (!setup_gltex(gltex, width, height, 1, 1)) {
     return false;
   }
   LColor border_color = tex->get_border_color();
@@ -2555,10 +2639,10 @@ upload_simple_texture(TinyTextureContext *gtc) {
   gltex->border_color.v[2] = border_color[2];
   gltex->border_color.v[3] = border_color[3];
 
-  ZTextureLevel *dest = &gltex->levels[0];
+  ZTextureLevel *dest = &gltex->views[0].levels[0];
   memcpy(dest->pixmap, image_ptr, image_size);
 
-  gtc->mark_simple_loaded();
+  gtc->mark_loaded();
 
   return true;
 }
@@ -2569,7 +2653,7 @@ upload_simple_texture(TinyTextureContext *gtc) {
  * texture is a valid size, false otherwise.
  */
 bool TinyGraphicsStateGuardian::
-setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
+setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_views, int num_levels) {
   if (x_size == 0 || y_size == 0) {
     // A texture without pixels gets turned into a 1x1 texture.
     x_size = 1;
@@ -2588,6 +2672,7 @@ setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
     return false;
   }
 
+  num_views = max(num_views, 1);
   num_levels = min(num_levels, MAX_MIPMAP_LEVELS);
 
   gltex->xsize = x_size;
@@ -2601,7 +2686,7 @@ setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
   // We allocate one big buffer, large enough to include all the mipmap
   // levels, and index into that buffer for each level.  This cuts down on the
   // number of individual alloc calls we have to make for each texture.
-  int total_bytecount = 0;
+  int view_size = 0;
 
   // Count up the total bytes required for all mipmap levels.
   {
@@ -2609,11 +2694,13 @@ setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
     int y = y_size;
     for (int level = 0; level < num_levels; ++level) {
       int bytecount = x * y * 4;
-      total_bytecount += bytecount;
+      view_size += bytecount;
       x = max((x >> 1), 1);
       y = max((y >> 1), 1);
     }
   }
+
+  int total_bytecount = view_size * num_views;
 
   if (gltex->total_bytecount != total_bytecount) {
     if (gltex->allocated_buffer != nullptr) {
@@ -2623,37 +2710,48 @@ setup_gltex(GLTexture *gltex, int x_size, int y_size, int num_levels) {
     gltex->total_bytecount = total_bytecount;
   }
 
+  if (num_views != gltex->num_views) {
+    if (gltex->views != nullptr) {
+      TinyTextureContext::get_class_type().deallocate_array(gltex->views);
+    }
+
+    gltex->views = (ZTextureView *)TinyTextureContext::get_class_type().allocate_array(sizeof(ZTextureView) * num_views);
+    gltex->num_views = num_views;
+  }
+
   char *next_buffer = (char *)gltex->allocated_buffer;
   char *end_of_buffer = next_buffer + total_bytecount;
 
-  int level = 0;
-  ZTextureLevel *dest = nullptr;
-  while (level < num_levels) {
-    dest = &gltex->levels[level];
-    int bytecount = x_size * y_size * 4;
-    dest->pixmap = (PIXEL *)next_buffer;
-    next_buffer += bytecount;
-    nassertr(next_buffer <= end_of_buffer, false);
+  for (int view = 0; view < num_views; ++view) {
+    int level = 0;
+    ZTextureLevel *dest = nullptr;
+    while (level < num_levels) {
+      dest = &gltex->views[view].levels[level];
+      int bytecount = x_size * y_size * 4;
+      dest->pixmap = (PIXEL *)next_buffer;
+      next_buffer += bytecount;
+      nassertr(next_buffer <= end_of_buffer, false);
 
-    dest->s_mask = ((1 << (s_bits + ZB_POINT_ST_FRAC_BITS)) - (1 << ZB_POINT_ST_FRAC_BITS)) << level;
-    dest->t_mask = ((1 << (t_bits + ZB_POINT_ST_FRAC_BITS)) - (1 << ZB_POINT_ST_FRAC_BITS)) << level;
-    dest->s_shift = (ZB_POINT_ST_FRAC_BITS + level);
-    dest->t_shift = (ZB_POINT_ST_FRAC_BITS - s_bits + level);
+      dest->s_mask = ((1 << (s_bits + ZB_POINT_ST_FRAC_BITS)) - (1 << ZB_POINT_ST_FRAC_BITS)) << level;
+      dest->t_mask = ((1 << (t_bits + ZB_POINT_ST_FRAC_BITS)) - (1 << ZB_POINT_ST_FRAC_BITS)) << level;
+      dest->s_shift = (ZB_POINT_ST_FRAC_BITS + level);
+      dest->t_shift = (ZB_POINT_ST_FRAC_BITS - s_bits + level);
 
-    x_size = max((x_size >> 1), 1);
-    y_size = max((y_size >> 1), 1);
-    s_bits = max(s_bits - 1, 0);
-    t_bits = max(t_bits - 1, 0);
+      x_size = max((x_size >> 1), 1);
+      y_size = max((y_size >> 1), 1);
+      s_bits = max(s_bits - 1, 0);
+      t_bits = max(t_bits - 1, 0);
 
-    ++level;
-  }
+      ++level;
+    }
 
-  // Fill out the remaining mipmap arrays with copies of the last level, so we
-  // don't have to be concerned with running off the end of this array while
-  // scanning out triangles.
-  while (level < MAX_MIPMAP_LEVELS) {
-    gltex->levels[level] = *dest;
-    ++level;
+    // Fill out the remaining mipmap arrays with copies of the last level, so we
+    // don't have to be concerned with running off the end of this array while
+    // scanning out triangles.
+    while (level < MAX_MIPMAP_LEVELS) {
+      gltex->views[view].levels[level] = *dest;
+      ++level;
+    }
   }
 
   return true;
@@ -2682,7 +2780,7 @@ get_tex_shift(int orig_size) {
  * indicated ZTexture pixmap.
  */
 void TinyGraphicsStateGuardian::
-copy_lum_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level) {
+copy_lum_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int view, int level) {
   Texture *tex = gtc->get_texture();
   nassertv(tex->get_num_components() == 1);
   nassertv(tex->get_expected_mipmap_x_size(level) == xsize &&
@@ -2692,7 +2790,7 @@ copy_lum_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gt
   nassertv(!src_image.is_null());
   const unsigned char *src = src_image.p();
   size_t view_size = tex->get_ram_mipmap_view_size(level);
-  src += view_size * gtc->get_view();
+  src += view_size * view;
 
   // Component width, and offset to the high-order byte.
   int cw = tex->get_component_width();
@@ -2720,7 +2818,7 @@ copy_lum_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gt
  * indicated ZTexture pixmap.
  */
 void TinyGraphicsStateGuardian::
-copy_alpha_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level) {
+copy_alpha_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int view, int level) {
   Texture *tex = gtc->get_texture();
   nassertv(tex->get_num_components() == 1);
 
@@ -2728,7 +2826,7 @@ copy_alpha_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *
   nassertv(!src_image.is_null());
   const unsigned char *src = src_image.p();
   size_t view_size = tex->get_ram_mipmap_view_size(level);
-  src += view_size * gtc->get_view();
+  src += view_size * view;
 
   // Component width, and offset to the high-order byte.
   int cw = tex->get_component_width();
@@ -2756,7 +2854,7 @@ copy_alpha_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *
  * green, or blue) from the texture into the indicated ZTexture pixmap.
  */
 void TinyGraphicsStateGuardian::
-copy_one_channel_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level, int channel) {
+copy_one_channel_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int view, int level, int channel) {
   Texture *tex = gtc->get_texture();
   nassertv(tex->get_num_components() == 1);
 
@@ -2764,7 +2862,7 @@ copy_one_channel_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureCon
   nassertv(!src_image.is_null());
   const unsigned char *src = src_image.p();
   size_t view_size = tex->get_ram_mipmap_view_size(level);
-  src += view_size * gtc->get_view();
+  src += view_size * view;
 
   // Component width, and offset to the high-order byte.
   int cw = tex->get_component_width();
@@ -2821,7 +2919,7 @@ copy_one_channel_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureCon
  * into the indicated ZTexture pixmap.
  */
 void TinyGraphicsStateGuardian::
-copy_la_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level) {
+copy_la_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int view, int level) {
   Texture *tex = gtc->get_texture();
   nassertv(tex->get_num_components() == 2);
 
@@ -2829,7 +2927,7 @@ copy_la_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc
   nassertv(!src_image.is_null());
   const unsigned char *src = src_image.p();
   size_t view_size = tex->get_ram_mipmap_view_size(level);
-  src += view_size * gtc->get_view();
+  src += view_size * view;
 
   // Component width, and offset to the high-order byte.
   int cw = tex->get_component_width();
@@ -2858,7 +2956,7 @@ copy_la_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc
  * indicated ZTexture pixmap.
  */
 void TinyGraphicsStateGuardian::
-copy_rgb_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level) {
+copy_rgb_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int view, int level) {
   Texture *tex = gtc->get_texture();
   nassertv(tex->get_num_components() == 3);
 
@@ -2866,7 +2964,7 @@ copy_rgb_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gt
   nassertv(!src_image.is_null());
   const unsigned char *src = src_image.p();
   size_t view_size = tex->get_ram_mipmap_view_size(level);
-  src += view_size * gtc->get_view();
+  src += view_size * view;
 
   // Component width, and offset to the high-order byte.
   int cw = tex->get_component_width();
@@ -2895,7 +2993,7 @@ copy_rgb_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gt
  * indicated ZTexture pixmap.
  */
 void TinyGraphicsStateGuardian::
-copy_rgba_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int level) {
+copy_rgba_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *gtc, int view, int level) {
   Texture *tex = gtc->get_texture();
   nassertv(tex->get_num_components() == 4);
 
@@ -2903,7 +3001,7 @@ copy_rgba_image(ZTextureLevel *dest, int xsize, int ysize, TinyTextureContext *g
   nassertv(!src_image.is_null());
   const unsigned char *src = src_image.p();
   size_t view_size = tex->get_ram_mipmap_view_size(level);
-  src += view_size * gtc->get_view();
+  src += view_size * view;
 
   // Component width, and offset to the high-order byte.
   int cw = tex->get_component_width();
@@ -3004,55 +3102,139 @@ load_matrix(M4 *matrix, const TransformState *transform) {
 }
 
 /**
- * Returns the integer element of store_pixel_funcs (as defined by
- * store_pixel.py) that corresponds to the indicated ColorBlendAttrib operand
- * code.
+ * Returns the integer index into the array of store_pixel functions
+ * corresponding to the given blend mode.
+ */
+int TinyGraphicsStateGuardian::
+get_color_blend_mode(ColorBlendAttrib::Mode mode) {
+  switch (mode) {
+  case ColorBlendAttrib::M_none:
+  case ColorBlendAttrib::M_add:
+  case ColorBlendAttrib::M_subtract:
+  case ColorBlendAttrib::M_inv_subtract:
+    return 0;
+  case ColorBlendAttrib::M_min:
+    return 1;
+  case ColorBlendAttrib::M_max:
+    return 2;
+  }
+  return 0;
+}
+
+/**
+ * Returns the integer index into the array of operands computed by store_pixel
+ * that corresponds to the indicated ColorBlendAttrib operand code.
  */
 int TinyGraphicsStateGuardian::
 get_color_blend_op(ColorBlendAttrib::Operand operand) {
   switch (operand) {
   case ColorBlendAttrib::O_zero:
-    return 0;
   case ColorBlendAttrib::O_one:
-    return 1;
-  case ColorBlendAttrib::O_incoming_color:
-    return 2;
-  case ColorBlendAttrib::O_one_minus_incoming_color:
-    return 3;
-  case ColorBlendAttrib::O_fbuffer_color:
-    return 4;
-  case ColorBlendAttrib::O_one_minus_fbuffer_color:
-    return 5;
-  case ColorBlendAttrib::O_incoming_alpha:
-    return 6;
-  case ColorBlendAttrib::O_one_minus_incoming_alpha:
-    return 7;
-  case ColorBlendAttrib::O_fbuffer_alpha:
-    return 8;
-  case ColorBlendAttrib::O_one_minus_fbuffer_alpha:
-    return 9;
   case ColorBlendAttrib::O_constant_color:
-    return 10;
   case ColorBlendAttrib::O_one_minus_constant_color:
-    return 11;
   case ColorBlendAttrib::O_constant_alpha:
-    return 12;
   case ColorBlendAttrib::O_one_minus_constant_alpha:
-    return 13;
-
-  case ColorBlendAttrib::O_incoming_color_saturate:
-    return 1;
-
   case ColorBlendAttrib::O_color_scale:
-    return 10;
   case ColorBlendAttrib::O_one_minus_color_scale:
-    return 11;
   case ColorBlendAttrib::O_alpha_scale:
-    return 12;
   case ColorBlendAttrib::O_one_minus_alpha_scale:
-    return 13;
+    return 0;
+  case ColorBlendAttrib::O_incoming_color:
+  case ColorBlendAttrib::O_one_minus_incoming_color:
+  case ColorBlendAttrib::O_incoming_color_saturate:
+  case ColorBlendAttrib::O_incoming1_color:
+  case ColorBlendAttrib::O_one_minus_incoming1_color:
+  case ColorBlendAttrib::O_incoming1_alpha:
+  case ColorBlendAttrib::O_one_minus_incoming1_alpha:
+    return 1;
+  case ColorBlendAttrib::O_fbuffer_color:
+  case ColorBlendAttrib::O_one_minus_fbuffer_color:
+    return 2;
+  case ColorBlendAttrib::O_incoming_alpha:
+  case ColorBlendAttrib::O_one_minus_incoming_alpha:
+    return 3;
+  case ColorBlendAttrib::O_fbuffer_alpha:
+  case ColorBlendAttrib::O_one_minus_fbuffer_alpha:
+    return 4;
   }
   return 0;
+}
+
+/**
+ * Returns true if the color blend operand should be inverted.
+ */
+bool TinyGraphicsStateGuardian::
+is_color_blend_op_inverted(ColorBlendAttrib::Operand operand) {
+  switch (operand) {
+  case ColorBlendAttrib::O_zero:
+  case ColorBlendAttrib::O_constant_color:
+  case ColorBlendAttrib::O_constant_alpha:
+  case ColorBlendAttrib::O_color_scale:
+  case ColorBlendAttrib::O_alpha_scale:
+  case ColorBlendAttrib::O_incoming_color:
+  case ColorBlendAttrib::O_incoming_color_saturate:
+  case ColorBlendAttrib::O_incoming1_color:
+  case ColorBlendAttrib::O_incoming1_alpha:
+  case ColorBlendAttrib::O_fbuffer_color:
+  case ColorBlendAttrib::O_incoming_alpha:
+  case ColorBlendAttrib::O_fbuffer_alpha:
+    return false;
+  case ColorBlendAttrib::O_one:
+  case ColorBlendAttrib::O_one_minus_constant_color:
+  case ColorBlendAttrib::O_one_minus_constant_alpha:
+  case ColorBlendAttrib::O_one_minus_color_scale:
+  case ColorBlendAttrib::O_one_minus_alpha_scale:
+  case ColorBlendAttrib::O_one_minus_incoming_color:
+  case ColorBlendAttrib::O_one_minus_incoming1_color:
+  case ColorBlendAttrib::O_one_minus_incoming1_alpha:
+  case ColorBlendAttrib::O_one_minus_fbuffer_color:
+  case ColorBlendAttrib::O_one_minus_incoming_alpha:
+  case ColorBlendAttrib::O_one_minus_fbuffer_alpha:
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Sets up the color blending state for the given blend operand.
+ */
+void TinyGraphicsStateGuardian::
+setup_color_blend(ZBlend &blend, ColorBlendAttrib::Operand op_rgb,
+                  ColorBlendAttrib::Operand op_alpha,
+                  int cr, int cg, int cb, int ca) {
+
+  blend.op_rgb = get_color_blend_op(op_rgb);
+  blend.op_alpha = get_color_blend_op(op_alpha);
+
+  // If it's inverted (one minus), we xor the value with 0xffff
+  unsigned int mask_rgb = is_color_blend_op_inverted(op_rgb) ? 0xffff : 0x0;
+  unsigned int mask_alpha = is_color_blend_op_inverted(op_alpha) ? 0xffff : 0x0;
+
+  blend.xor_r = mask_rgb;
+  blend.xor_g = mask_rgb;
+  blend.xor_b = mask_rgb;
+  blend.xor_a = mask_alpha;
+
+  // A constant factor is implemented by doing effectively O_zero ^ constant,
+  // so we can conveniently reuse the xor mask field to store it!
+  if (op_rgb == ColorBlendAttrib::O_constant_color ||
+      op_rgb == ColorBlendAttrib::O_one_minus_constant_color) {
+    blend.xor_r ^= cr;
+    blend.xor_g ^= cg;
+    blend.xor_b ^= cb;
+  }
+  if (op_rgb == ColorBlendAttrib::O_constant_alpha ||
+      op_rgb == ColorBlendAttrib::O_one_minus_constant_alpha) {
+    blend.xor_r ^= ca;
+    blend.xor_g ^= ca;
+    blend.xor_b ^= ca;
+  }
+  if (op_alpha == ColorBlendAttrib::O_constant_color ||
+      op_alpha == ColorBlendAttrib::O_constant_alpha ||
+      op_alpha == ColorBlendAttrib::O_one_minus_constant_color ||
+      op_alpha == ColorBlendAttrib::O_one_minus_constant_alpha) {
+    blend.xor_a ^= ca;
+  }
 }
 
 /**

@@ -16,7 +16,6 @@
 #include "dSearchPath.h"
 #include "executionEnvironment.h"
 #include "vector_string.h"
-#include "atomicAdjust.h"
 
 #include <stdio.h>  // For rename() and tempnam()
 #include <time.h>   // for clock() and time()
@@ -25,10 +24,13 @@
 
 #ifdef PHAVE_UTIME_H
 #include <utime.h>
+#endif
 
 // We assume we have these too.
+#ifndef _WIN32
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #ifdef PHAVE_GLOB_H
@@ -60,10 +62,10 @@ using std::wstring;
 
 TextEncoder::Encoding Filename::_filesystem_encoding = TextEncoder::E_utf8;
 
-TVOLATILE AtomicAdjust::Pointer Filename::_home_directory;
-TVOLATILE AtomicAdjust::Pointer Filename::_temp_directory;
-TVOLATILE AtomicAdjust::Pointer Filename::_user_appdata_directory;
-TVOLATILE AtomicAdjust::Pointer Filename::_common_appdata_directory;
+patomic<Filename *> Filename::_home_directory(nullptr);
+patomic<Filename *> Filename::_temp_directory(nullptr);
+patomic<Filename *> Filename::_user_appdata_directory(nullptr);
+patomic<Filename *> Filename::_common_appdata_directory(nullptr);
 TypeHandle Filename::_type_handle;
 
 #ifdef ANDROID
@@ -121,8 +123,8 @@ static const char *hosts_prefix = "/hosts/";
 static size_t hosts_prefix_length = 7;
 
 static string
-front_to_back_slash(const string &str) {
-  string result = str;
+front_to_back_slash(std::string_view str) {
+  string result(str);
   string::iterator si;
   for (si = result.begin(); si != result.end(); ++si) {
     if ((*si) == '/') {
@@ -134,8 +136,8 @@ front_to_back_slash(const string &str) {
 }
 
 static string
-back_to_front_slash(const string &str) {
-  string result = str;
+back_to_front_slash(std::string_view str) {
+  string result(str);
   string::iterator si;
   for (si = result.begin(); si != result.end(); ++si) {
     if ((*si) == '\\') {
@@ -152,10 +154,22 @@ get_panda_root() {
 
   if (panda_root == nullptr) {
     panda_root = new string;
+
+#ifdef _MSC_VER
+    char *envvar = nullptr;
+    size_t size = 0;
+    while (getenv_s(&size, envvar, size, "PANDA_ROOT") == ERANGE) {
+      envvar = (char *)alloca(size);
+    }
+    if (size != 0) {
+      (*panda_root) = front_to_back_slash(envvar);
+    }
+#else
     const char *envvar = getenv("PANDA_ROOT");
     if (envvar != nullptr) {
       (*panda_root) = front_to_back_slash(envvar);
     }
+#endif
 
     // Ensure the string ends in a backslash.  If PANDA_ROOT is empty or
     // undefined, this function must return a single backslash--not an empty
@@ -323,7 +337,7 @@ Filename(const Filename &dirname, const Filename &basename) {
  * and some forward slashes.
  */
 Filename Filename::
-from_os_specific(const string &os_specific, Filename::Type type) {
+from_os_specific(std::string_view os_specific, Filename::Type type) {
 #ifdef _WIN32
   string result = back_to_front_slash(os_specific);
   const string &panda_root = get_panda_root();
@@ -389,7 +403,7 @@ from_os_specific(const string &os_specific, Filename::Type type) {
  * converted from an os-specific wide-character string.
  */
 Filename Filename::
-from_os_specific_w(const wstring &os_specific, Filename::Type type) {
+from_os_specific_w(std::wstring_view os_specific, Filename::Type type) {
   TextEncoder encoder;
   encoder.set_encoding(get_filesystem_encoding());
   encoder.set_wtext(os_specific);
@@ -402,7 +416,7 @@ from_os_specific_w(const wstring &os_specific, Filename::Type type) {
  * automatically elevates the file to its true case if needed.
  */
 Filename Filename::
-expand_from(const string &os_specific, Filename::Type type) {
+expand_from(std::string_view os_specific, Filename::Type type) {
   Filename file = from_os_specific(ExecutionEnvironment::expand_string(os_specific),
                                    type);
   file.make_true_case();
@@ -419,10 +433,10 @@ expand_from(const string &os_specific, Filename::Type type) {
  * process could simultaneously create a file by the same name.
  */
 Filename Filename::
-temporary(const string &dirname, const string &prefix, const string &suffix,
+temporary(std::string_view dirname, const string &prefix, const string &suffix,
           Type type) {
   Filename fdirname = dirname;
-#if defined(_WIN32) || defined(ANDROID)
+#if defined(_WIN32) || defined(ANDROID) || defined(__wasi__)
   // The Windows tempnam() function doesn't do a good job of choosing a
   // temporary directory.  Choose one ourselves.
   if (fdirname.empty()) {
@@ -474,10 +488,12 @@ temporary(const string &dirname, const string &prefix, const string &suffix,
  */
 const Filename &Filename::
 get_home_directory() {
-  if (AtomicAdjust::get_ptr(_home_directory) == nullptr) {
+  Filename *curdir = _home_directory.load(std::memory_order_consume);
+  if (curdir == nullptr) {
     Filename home_directory;
 
-    // In all environments, check $HOME first.
+    // In all environments except Windows, check $HOME first.
+#ifndef _WIN32
     char *home = getenv("HOME");
     if (home != nullptr) {
       Filename dirname = from_os_specific(home);
@@ -487,6 +503,7 @@ get_home_directory() {
         }
       }
     }
+#endif
 
     if (home_directory.empty()) {
 #ifdef _WIN32
@@ -524,14 +541,16 @@ get_home_directory() {
     }
 
     Filename *newdir = new Filename(home_directory);
-    if (AtomicAdjust::compare_and_exchange_ptr(_home_directory, nullptr, newdir) != nullptr) {
+    if (_home_directory.compare_exchange_strong(curdir, newdir, std::memory_order_release, std::memory_order_consume)) {
+      return *newdir;
+    } else {
       // Didn't store it.  Must have been stored by someone else.
-      assert(_home_directory != nullptr);
+      assert(curdir != nullptr);
       delete newdir;
     }
   }
 
-  return (*(Filename *)_home_directory);
+  return *curdir;
 }
 
 /**
@@ -539,7 +558,8 @@ get_home_directory() {
  */
 const Filename &Filename::
 get_temp_directory() {
-  if (AtomicAdjust::get_ptr(_temp_directory) == nullptr) {
+  Filename *curdir = _temp_directory.load(std::memory_order_consume);
+  if (curdir == nullptr) {
     Filename temp_directory;
 
 #ifdef _WIN32
@@ -572,14 +592,16 @@ get_temp_directory() {
     }
 
     Filename *newdir = new Filename(temp_directory);
-    if (AtomicAdjust::compare_and_exchange_ptr(_temp_directory, nullptr, newdir) != nullptr) {
+    if (_temp_directory.compare_exchange_strong(curdir, newdir, std::memory_order_release, std::memory_order_consume)) {
+      return *newdir;
+    } else {
       // Didn't store it.  Must have been stored by someone else.
-      assert(_temp_directory != nullptr);
+      assert(curdir != nullptr);
       delete newdir;
     }
   }
 
-  return (*(Filename *)_temp_directory);
+  return *curdir;
 }
 
 /**
@@ -589,7 +611,8 @@ get_temp_directory() {
  */
 const Filename &Filename::
 get_user_appdata_directory() {
-  if (AtomicAdjust::get_ptr(_user_appdata_directory) == nullptr) {
+  Filename *curdir = _user_appdata_directory.load(std::memory_order_consume);
+  if (curdir == nullptr) {
     Filename user_appdata_directory;
 
 #ifdef _WIN32
@@ -629,14 +652,16 @@ get_user_appdata_directory() {
     }
 
     Filename *newdir = new Filename(user_appdata_directory);
-    if (AtomicAdjust::compare_and_exchange_ptr(_user_appdata_directory, nullptr, newdir) != nullptr) {
+    if (_user_appdata_directory.compare_exchange_strong(curdir, newdir, std::memory_order_release, std::memory_order_consume)) {
+      return *newdir;
+    } else {
       // Didn't store it.  Must have been stored by someone else.
-      assert(_user_appdata_directory != nullptr);
+      assert(curdir != nullptr);
       delete newdir;
     }
   }
 
-  return (*(Filename *)_user_appdata_directory);
+  return *curdir;
 }
 
 /**
@@ -645,7 +670,8 @@ get_user_appdata_directory() {
  */
 const Filename &Filename::
 get_common_appdata_directory() {
-  if (AtomicAdjust::get_ptr(_common_appdata_directory) == nullptr) {
+  Filename *curdir = _common_appdata_directory.load(std::memory_order_consume);
+  if (curdir == nullptr) {
     Filename common_appdata_directory;
 
 #ifdef _WIN32
@@ -679,14 +705,16 @@ get_common_appdata_directory() {
     }
 
     Filename *newdir = new Filename(common_appdata_directory);
-    if (AtomicAdjust::compare_and_exchange_ptr(_common_appdata_directory, nullptr, newdir) != nullptr) {
+    if (_common_appdata_directory.compare_exchange_strong(curdir, newdir, std::memory_order_release, std::memory_order_consume)) {
+      return *newdir;
+    } else {
       // Didn't store it.  Must have been stored by someone else.
-      assert(_common_appdata_directory != nullptr);
+      assert(curdir != nullptr);
       delete newdir;
     }
   }
 
-  return (*(Filename *)_common_appdata_directory);
+  return *curdir;
 }
 
 /**
@@ -694,7 +722,7 @@ get_common_appdata_directory() {
  * also be achieved with the assignment operator.
  */
 void Filename::
-set_fullpath(const string &s) {
+set_fullpath(std::string_view s) {
   (*this) = s;
 }
 
@@ -703,7 +731,7 @@ set_fullpath(const string &s) {
  * filename up to, but not including the rightmost slash.
  */
 void Filename::
-set_dirname(const string &s) {
+set_dirname(std::string_view s) {
   if (s.empty()) {
     // Remove the directory prefix altogether.
     _filename.replace(0, _basename_start, "");
@@ -719,11 +747,9 @@ set_dirname(const string &s) {
     // Replace the existing directory prefix, or insert a new one.
 
     // We build the string ss to include the terminal slash.
-    string ss;
-    if (s[s.length()-1] == '/') {
-      ss = s;
-    } else {
-      ss = s+'/';
+    string ss(s);
+    if (ss.back() != '/') {
+      ss += '/';
     }
 
     int length_change = (int)ss.length() - (int)_basename_start;
@@ -753,19 +779,18 @@ set_dirname(const string &s) {
  * filename after the rightmost slash, including any extensions.
  */
 void Filename::
-set_basename(const string &s) {
+set_basename(std::string_view s) {
   _filename.replace(_basename_start, string::npos, s);
   locate_extension();
   locate_hash();
 }
-
 
 /**
  * Replaces the full filename--directory and basename parts--except for the
  * extension.
  */
 void Filename::
-set_fullpath_wo_extension(const string &s) {
+set_fullpath_wo_extension(std::string_view s) {
   int length_change = (int)s.length() - (int)_basename_end;
 
   _filename.replace(0, _basename_end, s);
@@ -777,12 +802,11 @@ set_fullpath_wo_extension(const string &s) {
   locate_hash();
 }
 
-
 /**
  * Replaces the basename part of the filename, without the file extension.
  */
 void Filename::
-set_basename_wo_extension(const string &s) {
+set_basename_wo_extension(std::string_view s) {
   int length_change = (int)s.length() - (int)(_basename_end - _basename_start);
 
   if (_basename_end == string::npos) {
@@ -797,13 +821,12 @@ set_basename_wo_extension(const string &s) {
   locate_hash();
 }
 
-
 /**
  * Replaces the file extension.  This is everything after the rightmost dot,
  * if there is one, or the empty string if there is not.
  */
 void Filename::
-set_extension(const string &s) {
+set_extension(std::string_view s) {
   if (s.empty()) {
     // Remove the extension altogether.
     if (_basename_end != string::npos) {
@@ -816,7 +839,8 @@ set_extension(const string &s) {
     // Insert an extension where there was none before.
     _basename_end = _filename.length();
     _extension_start = _filename.length() + 1;
-    _filename += '.' + s;
+    _filename += '.';
+    _filename += s;
 
   } else {
     // Replace an existing extension.
@@ -855,7 +879,7 @@ get_filename_index(int index) const {
  * to the end of the filename.
  */
 void Filename::
-set_hash_to_end(const string &s) {
+set_hash_to_end(std::string_view s) {
   _filename.replace(_hash_start, string::npos, s);
 
   locate_basename();
@@ -1021,7 +1045,7 @@ make_canonical() {
     return true;
   }
 
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__wasi__)
   // Use realpath in order to resolve symlinks properly
   char newpath [PATH_MAX + 1];
   if (realpath(c_str(), newpath) != nullptr) {
@@ -1029,7 +1053,7 @@ make_canonical() {
     newpath_fn._flags = _flags;
     (*this) = newpath_fn;
   }
-#endif
+#endif  // _WIN32 __wasi__
 
   Filename cwd = ExecutionEnvironment::get_cwd();
   if (!r_make_canonical(cwd)) {
@@ -1261,9 +1285,12 @@ to_os_long_name() const {
 }
 
 /**
- * Returns true if the filename exists on the disk, false otherwise.  If the
- * type is indicated to be executable, this also tests that the file has
+ * Returns true if the filename exists on the physical disk, false otherwise.
+ * If the type is indicated to be executable, this also tests that the file has
  * execute permission.
+ *
+ * @see VirtualFileSystem::exists() for checking whether the filename exists in
+ * the virtual file system.
  */
 bool Filename::
 exists() const {
@@ -1292,8 +1319,11 @@ exists() const {
 }
 
 /**
- * Returns true if the filename exists and is the name of a regular file (i.e.
- * not a directory or device), false otherwise.
+ * Returns true if the filename exists on the physical disk and is the name of
+ * a regular file (i.e. not a directory or device), false otherwise.
+ *
+ * @see VirtualFileSystem::is_regular_file() for checking whether the filename
+ * exists and is a regular file in the virtual file system.
  */
 bool Filename::
 is_regular_file() const {
@@ -1322,8 +1352,8 @@ is_regular_file() const {
 }
 
 /**
- * Returns true if the filename exists and is either a directory or a regular
- * file that can be written to, or false otherwise.
+ * Returns true if the filename exists on the physical disk and is either a
+ * directory or a regular file that can be written to, or false otherwise.
  */
 bool Filename::
 is_writable() const {
@@ -1354,8 +1384,11 @@ is_writable() const {
 }
 
 /**
- * Returns true if the filename exists and is a directory name, false
- * otherwise.
+ * Returns true if the filename exists on the physical disk and is a directory
+ * name, false otherwise.
+ *
+ * @see VirtualFileSystem::is_directory() for checking whether the filename
+ * exists as a directory in the virtual file system.
  */
 bool Filename::
 is_directory() const {
@@ -1581,7 +1614,7 @@ get_file_size() const {
  */
 bool Filename::
 resolve_filename(const DSearchPath &searchpath,
-                 const string &default_extension) {
+                 std::string_view default_extension) {
   Filename found;
 
   if (is_local()) {
@@ -1876,13 +1909,13 @@ open_read(std::ifstream &stream) const {
 #endif
 
   stream.clear();
-#ifdef _WIN32
+#ifdef _MSC_VER
   wstring os_specific = to_os_specific_w();
   stream.open(os_specific.c_str(), open_mode);
 #else
   string os_specific = to_os_specific();
   stream.open(os_specific.c_str(), open_mode);
-#endif  // _WIN32
+#endif  // _MSC_VER
 
   return (!stream.fail());
 }
@@ -1926,11 +1959,11 @@ open_write(std::ofstream &stream, bool truncate) const {
 #endif
 
   stream.clear();
-#ifdef _WIN32
+#ifdef _MSC_VER
   wstring os_specific = to_os_specific_w();
 #else
   string os_specific = to_os_specific();
-#endif  // _WIN32
+#endif  // _MSC_VER
   stream.open(os_specific.c_str(), open_mode);
 
   return (!stream.fail());
@@ -1958,11 +1991,11 @@ open_append(std::ofstream &stream) const {
 #endif
 
   stream.clear();
-#ifdef _WIN32
+#ifdef _MSC_VER
   wstring os_specific = to_os_specific_w();
 #else
   string os_specific = to_os_specific();
-#endif  // _WIN32
+#endif  // _MSC_VER
   stream.open(os_specific.c_str(), open_mode);
 
   return (!stream.fail());
@@ -2000,11 +2033,11 @@ open_read_write(std::fstream &stream, bool truncate) const {
 #endif
 
   stream.clear();
-#ifdef _WIN32
+#ifdef _MSC_VER
   wstring os_specific = to_os_specific_w();
 #else
   string os_specific = to_os_specific();
-#endif  // _WIN32
+#endif  // _MSC_VER
   stream.open(os_specific.c_str(), open_mode);
 
   return (!stream.fail());
@@ -2032,11 +2065,11 @@ open_read_append(std::fstream &stream) const {
 #endif
 
   stream.clear();
-#ifdef _WIN32
+#ifdef _MSC_VER
   wstring os_specific = to_os_specific_w();
 #else
   string os_specific = to_os_specific();
-#endif  // _WIN32
+#endif  // _MSC_VER
   stream.open(os_specific.c_str(), open_mode);
 
   return (!stream.fail());
@@ -2280,7 +2313,9 @@ touch() const {
         perror(os_specific.c_str());
         return false;
       }
-      close(fd);
+      if (close(fd) < 0) {
+        perror(os_specific.c_str());
+      }
       return true;
     }
     perror(os_specific.c_str());
@@ -2292,7 +2327,7 @@ touch() const {
   // time.  For these systems, we'll just temporarily open the file in append
   // mode, then close it again (it gets closed when the pfstream goes out of
   // scope).
-  pfstream file;
+  pofstream file;
   return open_append(file);
 #endif  // _WIN32, PHAVE_UTIME_H
 }
@@ -2617,7 +2652,7 @@ get_hash() const {
  * (small) file with the specified contents, assuming it hasn't changed since
  * the last time the file was read.
  *
- * This is designed to be similar to AtomicAdjust::compare_and_exchange().
+ * This is designed to be similar to patomic::compare_exchange_strong().
  * The method writes new_contents to the file, completely replacing the
  * original contents; but only if the original contents exactly matched
  * old_contents.  If the file was modified, returns true.  If, however, the
@@ -2642,8 +2677,8 @@ get_hash() const {
  */
 bool Filename::
 atomic_compare_and_exchange_contents(string &orig_contents,
-                                     const string &old_contents,
-                                     const string &new_contents) const {
+                                     std::string_view old_contents,
+                                     std::string_view new_contents) const {
 #ifdef _WIN32
   wstring os_specific = to_os_specific_w();
   HANDLE hfile = CreateFileW(os_specific.c_str(), GENERIC_READ | GENERIC_WRITE,
@@ -2729,7 +2764,9 @@ atomic_compare_and_exchange_contents(string &orig_contents,
   if (flock(fd, LOCK_EX) != 0) {
 #endif
     perror(os_specific.c_str());
-    close(fd);
+    if (close(fd) < 0) {
+      perror(os_specific.c_str());
+    }
     return false;
   }
 
@@ -2741,7 +2778,9 @@ atomic_compare_and_exchange_contents(string &orig_contents,
 
   if (bytes_read < 0) {
     perror(os_specific.c_str());
-    close(fd);
+    if (close(fd) < 0) {
+      perror(os_specific.c_str());
+    }
     return false;
   }
 
@@ -2752,7 +2791,9 @@ atomic_compare_and_exchange_contents(string &orig_contents,
     ssize_t bytes_written = write(fd, new_contents.data(), new_contents.size());
     if (bytes_written < 0) {
       perror(os_specific.c_str());
-      close(fd);
+      if (close(fd) < 0) {
+        perror(os_specific.c_str());
+      }
       return false;
     }
   }
@@ -2845,7 +2886,9 @@ atomic_read_contents(string &contents) const {
   if (flock(fd, LOCK_EX) != 0) {
 #endif
     perror(os_specific.c_str());
-    close(fd);
+    if (close(fd) < 0) {
+      perror(os_specific.c_str());
+    }
     return false;
   }
 
@@ -2857,11 +2900,15 @@ atomic_read_contents(string &contents) const {
 
   if (bytes_read < 0) {
     perror(os_specific.c_str());
-    close(fd);
+    if (close(fd) < 0) {
+      perror(os_specific.c_str());
+    }
     return false;
   }
 
-  close(fd);
+  if (close(fd) < 0) {
+    perror(os_specific.c_str());
+  }
   return true;
 #endif  // _WIN32
 }
@@ -2988,7 +3035,7 @@ locate_hash() {
  * common to both filenames.
  */
 size_t Filename::
-get_common_prefix(const string &other) const {
+get_common_prefix(std::string_view other) const {
   size_t len = 0;
 
   // First, get the length of the common initial substring.
@@ -3010,9 +3057,9 @@ get_common_prefix(const string &other) const {
  * counting a terminal slash.
  */
 int Filename::
-count_slashes(const string &str) {
+count_slashes(std::string_view str) {
   int count = 0;
-  string::const_iterator si;
+  std::string_view::const_iterator si;
   si = str.begin();
 
   while (si != str.end()) {

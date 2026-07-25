@@ -29,7 +29,7 @@
 #ifdef HAVE_OPENSSL
 typedef struct x509_st X509;
 typedef struct evp_pkey_st EVP_PKEY;
-#endif
+#endif // HAVE_OPENSSL
 
 /**
  * A file that contains a set of files.
@@ -69,22 +69,23 @@ PUBLISHED:
 
   INLINE void set_encryption_flag(bool flag);
   INLINE bool get_encryption_flag() const;
-  INLINE void set_encryption_password(const std::string &encryption_password);
-  INLINE const std::string &get_encryption_password() const;
 
-  INLINE void set_encryption_algorithm(const std::string &encryption_algorithm);
+  INLINE void set_encryption_algorithm(std::string encryption_algorithm);
   INLINE const std::string &get_encryption_algorithm() const;
   INLINE void set_encryption_key_length(int encryption_key_length);
   INLINE int get_encryption_key_length() const;
   INLINE void set_encryption_iteration_count(int encryption_iteration_count);
   INLINE int get_encryption_iteration_count() const;
 
-  std::string add_subfile(const std::string &subfile_name, const Filename &filename,
+  std::string add_subfile(std::string_view subfile_name, const Filename &filename,
                      int compression_level);
-  std::string add_subfile(const std::string &subfile_name, std::istream *subfile_data,
+  std::string add_subfile(std::string_view subfile_name, std::istream *subfile_data,
                      int compression_level);
-  std::string update_subfile(const std::string &subfile_name, const Filename &filename,
+  std::string update_subfile(std::string_view subfile_name, const Filename &filename,
                         int compression_level);
+
+  PY_EXTENSION(INLINE PyObject *set_encryption_password(PyObject *encryption_password) const);
+  PY_EXTENSION(INLINE PyObject *get_encryption_password() const);
 
 #ifdef HAVE_OPENSSL
   bool add_signature(const Filename &certificate,
@@ -108,12 +109,11 @@ PUBLISHED:
   BLOCKING bool repack();
 
   int get_num_subfiles() const;
-  int find_subfile(const std::string &subfile_name) const;
-  bool has_directory(const std::string &subfile_name) const;
-  bool scan_directory(vector_string &contents,
-                      const std::string &subfile_name) const;
+  int find_subfile(std::string_view subfile_name) const;
+  bool has_directory(std::string subfile_name) const;
+  bool scan_directory(vector_string &contents, std::string subfile_name) const;
   void remove_subfile(int index);
-  INLINE bool remove_subfile(const std::string &subfile_name);
+  INLINE bool remove_subfile(std::string_view subfile_name);
   const std::string &get_subfile_name(int index) const;
   MAKE_SEQ(get_subfile_names, get_num_subfiles, get_subfile_name);
   size_t get_subfile_length(int index) const;
@@ -127,7 +127,7 @@ PUBLISHED:
   size_t get_subfile_internal_length(int index) const;
 
   BLOCKING INLINE vector_uchar read_subfile(int index);
-  BLOCKING std::istream *open_read_subfile(int index);
+  [[nodiscard]] BLOCKING std::istream *open_read_subfile(int index);
   BLOCKING static void close_read_subfile(std::istream *stream);
   BLOCKING bool extract_subfile(int index, const Filename &filename);
   BLOCKING bool extract_subfile_to(int index, std::ostream &out);
@@ -139,10 +139,13 @@ PUBLISHED:
   static INLINE std::string get_magic_number();
   MAKE_PROPERTY(magic_number, get_magic_number);
 
-  void set_header_prefix(const std::string &header_prefix);
+  void set_header_prefix(std::string header_prefix);
   INLINE const std::string &get_header_prefix() const;
 
 public:
+  INLINE void set_encryption_password(std::string encryption_password);
+  INLINE const std::string &get_encryption_password() const;
+
 #ifdef HAVE_OPENSSL
   class CertRecord {
   public:
@@ -204,7 +207,7 @@ private:
     int _compression_level;  // Not preserved on disk.
 #ifdef HAVE_OPENSSL
     EVP_PKEY *_pkey;         // Not preserved on disk.
-#endif
+#endif // HAVE_OPENSSL
   };
 
   INLINE std::streampos word_to_streampos(size_t word) const;
@@ -214,7 +217,7 @@ private:
 
   void add_new_subfile(Subfile *subfile, int compression_level);
   std::istream *open_read_subfile(Subfile *subfile);
-  std::string standardize_subfile_name(const std::string &subfile_name) const;
+  std::string standardize_subfile_name(std::string_view subfile_name) const;
 
   void clear_subfiles();
   bool read_index();
@@ -234,7 +237,7 @@ private:
 #ifdef HAVE_OPENSSL
   typedef pvector<CertChain> Certificates;
   Certificates _signatures;
-#endif
+#endif // HAVE_OPENSSL
 
   std::streampos _offset;
   IStreamWrapper *_read;
@@ -281,4 +284,4 @@ private:
 
 #include "multifile.I"
 
-#endif
+#endif // !MULTIFILE_H

@@ -25,6 +25,9 @@ typedef _object PyObject;
 struct _typeobject;
 typedef _typeobject PyTypeObject;
 
+struct _frame;
+typedef _frame PyFrameObject;
+
 typedef struct {} PyStringObject;
 typedef struct {} PyUnicodeObject;
 
@@ -48,5 +51,10 @@ PyObject _Py_FalseStruct;
 #endif
 
 typedef void *visitproc;
+
+typedef enum {
+  PyRefTracer_CREATE = 0,
+  PyRefTracer_DESTROY = 1,
+} PyRefTracerEvent;
 
 #endif  // PYTHON_H

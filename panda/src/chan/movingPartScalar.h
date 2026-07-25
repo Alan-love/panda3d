@@ -30,7 +30,7 @@ protected:
   INLINE MovingPartScalar(const MovingPartScalar &copy);
 
 public:
-  INLINE MovingPartScalar(PartGroup *parent, const std::string &name,
+  INLINE MovingPartScalar(PartGroup *parent, std::string name,
                           PN_stdfloat default_value = 0);
   virtual ~MovingPartScalar();
 
@@ -45,7 +45,7 @@ protected:
 public:
   static void register_with_read_factory();
 
-  static TypedWritable *make_MovingPartScalar(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 public:
   virtual TypeHandle get_type() const {

@@ -118,7 +118,11 @@ private:
 
   void load_textures();
   bool load_texture(TextureDef &def, EggTexture *egg_tex);
-  void apply_texture_attributes(Texture *tex, const EggTexture *egg_tex);
+  void set_up_loader_options(EggTexture *egg_tex, LoaderOptions &options, SamplerState &sampler);
+  void set_up_sampler(SamplerState &sampler, const EggTexture *egg_tex);
+  void check_texture_attributes(Texture *tex, SamplerState sampler, const EggTexture *egg_tex);
+  Texture::Format convert_format(EggTexture::Format format, EggTexture::EnvType env);
+  Texture::QualityLevel convert_quality_level(EggTexture::QualityLevel mode);
   Texture::CompressionMode convert_compression_mode(EggTexture::CompressionMode compression_mode) const;
   SamplerState::WrapMode convert_wrap_mode(EggTexture::WrapMode wrap_mode) const;
   PT(TextureStage) make_texture_stage(const EggTexture *egg_tex);
@@ -147,7 +151,7 @@ private:
    CharacterMaker *character_maker);
   void record_morph
   (GeomVertexArrayFormat *array_format,
-   CharacterMaker *character_maker, const std::string &morph_name,
+   CharacterMaker *character_maker, std::string_view morph_name,
    InternalName *column_name, int num_components);
 
   void make_primitive(const EggRenderState *render_state,
@@ -206,7 +210,7 @@ private:
                            const pvector<std::string> &expanded_history);
   bool do_expand_object_type(EggGroup *egg_group, const pset<std::string> &expanded,
                              const pvector<std::string> &expanded_history,
-                             const std::string &object_type);
+                             std::string_view object_type);
 
   static TextureStage::CombineMode
   get_combine_mode(const EggTexture *egg_tex,

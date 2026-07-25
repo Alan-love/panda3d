@@ -23,13 +23,15 @@
 #include "ordered_vector.h"
 #include "vector_int.h"
 #include "epvector.h"
+#include "small_vector.h"
 
 /**
  * Indicates the set of TextureStages and their associated Textures that
  * should be applied to (or removed from) a node.
  */
-class EXPCL_PANDA_PGRAPH TextureAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH TextureAttrib final : public RenderAttrib {
 protected:
+  friend class StaticObject<TextureAttrib>;
   INLINE TextureAttrib();
   INLINE TextureAttrib(const TextureAttrib &copy);
 
@@ -90,6 +92,9 @@ PUBLISHED:
   CPT(RenderAttrib) remove_off_stage(TextureStage *stage) const;
   CPT(RenderAttrib) unify_texture_stages(TextureStage *stage) const;
   CPT(RenderAttrib) replace_texture(Texture *tex, Texture *new_tex) const;
+#ifdef CPPPARSER  // Let interrogate know this also accepts None
+  CPT(RenderAttrib) replace_texture(Texture *tex, std::nullptr_t new_tex) const;
+#endif
 
 public:
   CPT(TextureAttrib) filter_to_max(int max_texture_stages) const;
@@ -144,7 +149,7 @@ private:
   typedef ov_set<StageNode, CompareTextureStagePointer, epvector<StageNode> > Stages;
   Stages _on_stages;  // set of all "on" stages, indexed by pointer.
 
-  typedef pvector<StageNode *> RenderStages;
+  typedef small_vector<StageNode *> RenderStages;
   RenderStages _render_stages;      // all "on" stages, sorted in render order.
   RenderStages _render_ff_stages;   // fixed-function stages only, in render order.
   unsigned int _next_implicit_sort;
@@ -187,7 +192,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "TextureAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 30, new TextureAttrib);
+    static StaticObject<TextureAttrib> default_attrib;
+    _attrib_slot = register_slot(_type_handle, 30, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

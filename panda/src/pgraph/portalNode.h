@@ -29,8 +29,8 @@
  */
 class EXPCL_PANDA_PGRAPH PortalNode : public PandaNode {
 PUBLISHED:
-  explicit PortalNode(const std::string &name);
-  explicit PortalNode(const std::string &name, LPoint3 pos, PN_stdfloat scale=10.0);
+  explicit PortalNode(std::string name);
+  explicit PortalNode(std::string name, LPoint3 pos, PN_stdfloat scale=10.0);
 
 protected:
   PortalNode(const PortalNode &copy);
@@ -45,7 +45,6 @@ public:
   virtual void enable_clipping_planes();
 
   virtual bool cull_callback(CullTraverser *trav, CullTraverserData &data);
-  virtual bool is_renderable() const;
 
   virtual void output(std::ostream &out) const;
 

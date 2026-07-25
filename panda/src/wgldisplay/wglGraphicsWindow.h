@@ -23,7 +23,7 @@
 class EXPCL_PANDA_WGLDISPLAY wglGraphicsWindow : public WinGraphicsWindow {
 public:
   wglGraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
-                    const std::string &name,
+                    std::string name,
                     const FrameBufferProperties &fb_prop,
                     const WindowProperties &win_prop,
                     int flags,
@@ -34,7 +34,6 @@ public:
   virtual bool begin_frame(FrameMode mode, Thread *current_thread);
   virtual void end_frame(FrameMode mode, Thread *current_thread);
 
-  virtual void begin_flip();
   virtual void ready_flip();
   virtual void end_flip();
 

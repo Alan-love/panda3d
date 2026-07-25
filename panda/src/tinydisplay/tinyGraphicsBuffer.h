@@ -24,7 +24,7 @@
 class EXPCL_TINYDISPLAY TinyGraphicsBuffer : public GraphicsBuffer {
 public:
   TinyGraphicsBuffer(GraphicsEngine *engine, GraphicsPipe *pipe,
-                     const std::string &name,
+                     std::string name,
                      const FrameBufferProperties &fb_prop,
                      const WindowProperties &win_prop,
                      int flags,
@@ -34,6 +34,8 @@ public:
 
   virtual bool begin_frame(FrameMode mode, Thread *current_thread);
   virtual void end_frame(FrameMode mode, Thread *current_thread);
+
+  virtual void set_size(int x, int y);
 
   INLINE ZBuffer *get_frame_buffer();
 

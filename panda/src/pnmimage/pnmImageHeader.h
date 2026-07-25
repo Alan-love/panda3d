@@ -20,6 +20,7 @@
 
 #include "typedObject.h"
 #include "filename.h"
+#include "memoryBase.h"
 #include "pnotify.h"
 #include "pmap.h"
 #include "pvector.h"
@@ -37,7 +38,7 @@ class PNMWriter;
  * image except the image data itself.  It's the sort of information you
  * typically read from the image file's header.
  */
-class EXPCL_PANDA_PNMIMAGE PNMImageHeader {
+class EXPCL_PANDA_PNMIMAGE PNMImageHeader : public MemoryBase {
 PUBLISHED:
   INLINE PNMImageHeader();
   INLINE PNMImageHeader(const PNMImageHeader &copy);
@@ -76,7 +77,7 @@ PUBLISHED:
   MAKE_PROPERTY(size, get_size);
 
   INLINE std::string get_comment() const;
-  INLINE void set_comment(const std::string &comment);
+  INLINE void set_comment(std::string comment);
   MAKE_PROPERTY(comment, get_comment, set_comment);
 
   INLINE bool has_type() const;
@@ -86,7 +87,7 @@ PUBLISHED:
 
   BLOCKING bool read_header(const Filename &filename, PNMFileType *type = nullptr,
                             bool report_unknown_type = true);
-  BLOCKING bool read_header(std::istream &data, const std::string &filename = std::string(),
+  BLOCKING bool read_header(std::istream &data, std::string_view filename = std::string_view(),
                             PNMFileType *type = nullptr, bool report_unknown_type = true);
 
   PNMReader *make_reader(const Filename &filename,
@@ -117,12 +118,12 @@ PUBLISHED:
     INLINE PixelSpec() = default;
 
   PUBLISHED:
-    INLINE PixelSpec(xelval gray_value);
-    INLINE PixelSpec(xelval gray_value, xelval alpha);
+    INLINE explicit PixelSpec(xelval gray_value);
+    INLINE explicit PixelSpec(xelval gray_value, xelval alpha);
     INLINE PixelSpec(xelval red, xelval green, xelval blue);
     INLINE PixelSpec(xelval red, xelval green, xelval blue, xelval alpha);
     INLINE PixelSpec(const xel &rgb);
-    INLINE PixelSpec(const xel &rgb, xelval alpha);
+    INLINE explicit PixelSpec(const xel &rgb, xelval alpha);
 
     INLINE bool operator < (const PixelSpec &other) const;
     INLINE bool operator == (const PixelSpec &other) const;

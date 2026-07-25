@@ -24,8 +24,9 @@ class FactoryParams;
 /**
  * Applies a scale to colors in the scene graph and on vertices.
  */
-class EXPCL_PANDA_PGRAPH ColorScaleAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH ColorScaleAttrib final : public RenderAttrib {
 protected:
+  friend class StaticObject<ColorScaleAttrib>;
   ColorScaleAttrib(bool off, const LVecBase4 &scale);
   INLINE ColorScaleAttrib(const ColorScaleAttrib &copy);
 
@@ -92,8 +93,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "ColorScaleAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100,
-      new ColorScaleAttrib(false, LVecBase4(1, 1, 1, 1)));
+    static StaticObject<ColorScaleAttrib> default_attrib(false, LVecBase4(1, 1, 1, 1));
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

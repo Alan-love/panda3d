@@ -28,6 +28,10 @@
 #include "executionEnvironment.h"
 #include "pset.h"
 
+#ifdef __EMSCRIPTEN__
+#include "virtualFileMountHTTP.h"
+#endif
+
 using std::iostream;
 using std::istream;
 using std::ostream;
@@ -126,7 +130,7 @@ mount(ZipArchive *archive, const Filename &mount_point, int flags) {
  */
 bool VirtualFileSystem::
 mount(const Filename &physical_filename, const Filename &mount_point,
-      int flags, const string &password) {
+      int flags, std::string password) {
   if (!physical_filename.exists()) {
     express_cat->warning()
       << "Attempt to mount " << physical_filename << ", not found.\n";
@@ -156,7 +160,7 @@ mount(const Filename &physical_filename, const Filename &mount_point,
   // read-write on multifiles and .zip files.
   flags |= MF_read_only;
 
-  char ch = stream->get();
+  int ch = stream->get();
   if (ch == '#' || ch == 'p') {
     // It *might* be a multifile.
     while (ch == '#') {
@@ -180,7 +184,7 @@ mount(const Filename &physical_filename, const Filename &mount_point,
       close_read_file(stream);
 
       PT(Multifile) multifile = new Multifile;
-      multifile->set_encryption_password(password);
+      multifile->set_encryption_password(std::move(password));
 
       if (!multifile->open_read(physical_filename)) {
         return false;
@@ -217,7 +221,7 @@ mount(const Filename &physical_filename, const Filename &mount_point,
  */
 bool VirtualFileSystem::
 mount_loop(const Filename &virtual_filename, const Filename &mount_point,
-           int flags, const string &password) {
+           int flags, std::string password) {
   PT(VirtualFile) file = get_file(virtual_filename, false);
   if (file == nullptr) {
     express_cat->warning()
@@ -233,7 +237,7 @@ mount_loop(const Filename &virtual_filename, const Filename &mount_point,
   } else {
     // It's not a directory; it must be a Multifile.
     PT(Multifile) multifile = new Multifile;
-    multifile->set_encryption_password(password);
+    multifile->set_encryption_password(std::move(password));
 
     // For now these are always opened read only.  Maybe later we'll support
     // read-write on Multifiles.
@@ -746,7 +750,7 @@ copy_file(const Filename &orig_filename, const Filename &new_filename) {
 bool VirtualFileSystem::
 resolve_filename(Filename &filename,
                  const DSearchPath &searchpath,
-                 const string &default_extension) const {
+                 std::string_view default_extension) const {
   PT(VirtualFile) found;
 
   if (filename.is_local()) {
@@ -853,10 +857,54 @@ get_global_ptr() {
     _global_ptr = new VirtualFileSystem;
 
     // Set up the default mounts.  First, there is always the root mount.
-    _global_ptr->mount("/", "/", 0);
+#ifdef __EMSCRIPTEN__
+    // Unless we're running in node.js, we don't have a filesystem, and instead
+    // mount the current server root as our filesystem root.
+    bool is_node = (bool)EM_ASM_INT(return (typeof process === 'object' && typeof process.versions === 'object' && typeof process.versions.node === 'string'));
+    if (!is_node) {
+      _global_ptr->mount(new VirtualFileMountHTTP(URLSpec("/")), "/", MF_read_only);
 
-    // And our initial cwd comes from the environment.
-    _global_ptr->chdir(ExecutionEnvironment::get_cwd());
+      // And get the "current working directory".
+      char cwd[4096];
+      bool have_memfs = (bool)EM_ASM_INT({
+        var path = location.pathname;
+        stringToUTF8(path.substring(0, path.lastIndexOf('/')), $0, 4096);
+
+        if (FS && FS.root) {
+          /* Emscripten creates these by default, but we don't want them. */
+          var contents = FS.root.contents;
+          delete contents.dev;
+          delete contents.home;
+          delete contents.proc;
+          delete contents.tmp;
+          return true;
+        }
+        else {
+          return false;
+        }
+      }, cwd);
+
+      if (cwd[0] == 0) {
+        cwd[0] = '/';
+        cwd[1] = 0;
+      }
+
+      _global_ptr->_cwd = cwd;
+
+      // If we built with the Emscripten VFS enabled, mount it on top of the
+      // current directory, so that emscripten's preload system will work.
+      if (have_memfs) {
+        _global_ptr->mount("/", _global_ptr->_cwd, MF_read_only);
+      }
+    }
+    else
+#endif
+    {
+      _global_ptr->mount("/", "/", 0);
+
+      // And our initial cwd comes from the environment.
+      _global_ptr->chdir(ExecutionEnvironment::get_cwd());
+    }
 
     // Then, we add whatever mounts are listed in the Configrc file.
     ConfigVariableList mounts
@@ -1105,8 +1153,8 @@ close_read_write_file(iostream *stream) {
  */
 bool VirtualFileSystem::
 atomic_compare_and_exchange_contents(const Filename &filename, string &orig_contents,
-                                     const string &old_contents,
-                                     const string &new_contents) {
+                                     std::string_view old_contents,
+                                     std::string_view new_contents) {
   PT(VirtualFile) file = create_file(filename);
   if (file == nullptr) {
     return false;
@@ -1158,7 +1206,7 @@ scan_mount_points(vector_string &names, const Filename &path) const {
           mount_point[prefix.length()] == '/') {
         // This mount point is below the indicated path.  Is it only one
         // directory below?
-        string basename = mount_point.substr(prefix.length());
+        string basename = mount_point.substr(prefix.length() + 1);
         if (basename.find('/') == string::npos) {
           // No embedded slashes, so it's only one directory below.
           names.push_back(basename);
@@ -1174,14 +1222,14 @@ scan_mount_points(vector_string &names, const Filename &path) const {
  * Config.prc line.
  */
 void VirtualFileSystem::
-parse_options(const string &options, int &flags, string &password) {
+parse_options(std::string_view options, int &flags, string &password) {
   flags = 0;
   password = string();
 
   // Split the options up by commas.
   size_t p = 0;
   size_t q = options.find(',', p);
-  while (q != string::npos) {
+  while (q != std::string_view::npos) {
     parse_option(options.substr(p, q - p),
                  flags, password);
     p = q + 1;
@@ -1195,7 +1243,7 @@ parse_options(const string &options, int &flags, string &password) {
  * Config.prc line.
  */
 void VirtualFileSystem::
-parse_option(const string &option, int &flags, string &password) {
+parse_option(std::string_view option, int &flags, string &password) {
   if (option == "0" || option.empty()) {
     // 0 is the null option.
   } else if (option == "ro") {

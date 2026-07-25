@@ -49,6 +49,7 @@ GraphicsPipeSelection() : _lock("GraphicsPipeSelection") {
 
   _default_display_module = load_display.get_word(0);
   _default_pipe_name = load_display.get_word(1);
+  _default_pipe_type = TypeHandle::none();
 
   if (_default_display_module == "*") {
     // '*' or empty string is the key for all display modules.
@@ -124,7 +125,11 @@ print_pipe_types() const {
   LightMutexHolder holder(_lock);
   nout << "Known pipe types:" << std::endl;
   for (const PipeType &pipe_type : _pipe_types) {
-    nout << "  " << pipe_type._type << "\n";
+    nout << "  " << pipe_type._type;
+    if (_pipe_types.size() > 1 && pipe_type._type == _default_pipe_type) {
+      nout << " (default)";
+    }
+    nout << "\n";
   }
   if (_display_modules.empty()) {
     nout << "(all display modules loaded.)\n";
@@ -143,7 +148,7 @@ print_pipe_types() const {
  * module, or if module_name is empty, it will call load_aux_modules().
  */
 PT(GraphicsPipe) GraphicsPipeSelection::
-make_pipe(const string &type_name, const string &module_name) {
+make_pipe(std::string_view type_name, std::string_view module_name) {
   TypeRegistry *type_reg = TypeRegistry::ptr();
 
   // First, see if the type is already available.
@@ -229,7 +234,7 @@ make_pipe(TypeHandle type) {
  * GraphicsPipe.
  */
 PT(GraphicsPipe) GraphicsPipeSelection::
-make_module_pipe(const string &module_name) {
+make_module_pipe(std::string_view module_name) {
   if (display_cat.is_debug()) {
     display_cat.debug()
       << "make_module_pipe(" << module_name << ")\n";
@@ -256,7 +261,7 @@ make_default_pipe() {
 
   if (!_default_pipe_name.empty()) {
     // First, look for an exact match of the default type name from the
-    // Configrc file (excepting case and hyphenunderscore).
+    // Config.prc file (excepting case and hyphen / underscore).
     for (const PipeType &ptype : _pipe_types) {
       if (cmp_nocase_uh(ptype._type.get_name(), _default_pipe_name) == 0) {
         // Here's an exact match.
@@ -273,6 +278,18 @@ make_default_pipe() {
       string ptype_name = downcase(ptype._type.get_name());
       if (ptype_name.find(preferred_name) != string::npos) {
         // Here's a substring match.
+        PT(GraphicsPipe) pipe = (*ptype._constructor)();
+        if (pipe != nullptr) {
+          return pipe;
+        }
+      }
+    }
+  }
+
+  // Look for the preferred type of the default display module.
+  if (_default_pipe_type != TypeHandle::none()) {
+    for (const PipeType &ptype : _pipe_types) {
+      if (ptype._type == _default_pipe_type) {
         PT(GraphicsPipe) pipe = (*ptype._constructor)();
         if (pipe != nullptr) {
           return pipe;
@@ -358,7 +375,7 @@ do_load_default_module() {
     return;
   }
 
-  load_named_module(_default_display_module);
+  _default_pipe_type = load_named_module(_default_display_module);
 
   DisplayModules::iterator di =
     std::find(_display_modules.begin(), _display_modules.end(),
@@ -382,7 +399,7 @@ do_load_default_module() {
  * TypeHandle::none() on failure.
  */
 TypeHandle GraphicsPipeSelection::
-load_named_module(const string &name) {
+load_named_module(std::string_view name) {
   LightMutexHolder holder(_loaded_modules_lock);
 
   LoadedModules::iterator mi = _loaded_modules.find(name);
@@ -392,7 +409,7 @@ load_named_module(const string &name) {
   }
 
   // We have not yet loaded this module.  Load it now.
-  Filename dlname = Filename::dso_filename("lib" + name + ".so");
+  Filename dlname = Filename::dso_filename(std::string("lib").append(name).append(".so"));
   display_cat.info()
     << "loading display module: " << dlname.to_os_specific() << std::endl;
   void *handle = load_dso(get_plugin_path().get_value(), dlname);
@@ -405,7 +422,7 @@ load_named_module(const string &name) {
 
   // Now get the module's recommended pipe type.  This requires calling a
   // specially-named function that should have been exported from the module.
-  string symbol_name = "get_pipe_type_" + name;
+  string symbol_name = std::string("get_pipe_type_").append(name);
   void *dso_symbol = get_dso_symbol(handle, symbol_name);
   if (display_cat.is_debug()) {
     display_cat.debug()
@@ -451,7 +468,7 @@ load_named_module(const string &name) {
       << "\n";
   }
 
-  LoadedModule &module = _loaded_modules[name];
+  LoadedModule &module = _loaded_modules[std::string(name)];
   module._module_name = name;
   module._module_handle = handle;
   module._default_pipe_type = pipe_type;

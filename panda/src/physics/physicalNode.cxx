@@ -13,13 +13,10 @@
 
 #include "physicalNode.h"
 #include "physicsManager.h"
-
-#ifdef PHAVE_ATOMIC
-#include <atomic>
-#endif
+#include "patomic.h"
 
 // static stuff.
-static std::atomic_flag warned_copy_physical_node = ATOMIC_FLAG_INIT;
+static patomic_flag warned_copy_physical_node = ATOMIC_FLAG_INIT;
 
 TypeHandle PhysicalNode::_type_handle;
 
@@ -27,8 +24,8 @@ TypeHandle PhysicalNode::_type_handle;
  * default constructor
  */
 PhysicalNode::
-PhysicalNode(const std::string &name) :
-  PandaNode(name)
+PhysicalNode(std::string name) :
+  PandaNode(std::move(name))
 {
 }
 

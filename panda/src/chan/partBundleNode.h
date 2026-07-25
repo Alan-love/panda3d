@@ -21,7 +21,7 @@
 #include "lightMutex.h"
 #include "pandaNode.h"
 #include "dcast.h"
-#include "pvector.h"
+#include "small_vector.h"
 
 /**
  * This is a node that contains a pointer to an PartBundle.  Like
@@ -34,7 +34,7 @@
  */
 class EXPCL_PANDA_CHAN PartBundleNode : public PandaNode {
 PUBLISHED:
-  INLINE explicit PartBundleNode(const std::string &name, PartBundle *bundle);
+  INLINE explicit PartBundleNode(std::string name, PartBundle *bundle);
 
 protected:
   INLINE PartBundleNode();
@@ -66,7 +66,7 @@ protected:
 
 protected:
   LightMutex _lock;
-  typedef pvector< PT(PartBundleHandle) > Bundles;
+  typedef small_vector< PT(PartBundleHandle) > Bundles;
   Bundles _bundles;
 
 public:

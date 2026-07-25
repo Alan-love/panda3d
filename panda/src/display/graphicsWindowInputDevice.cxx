@@ -29,15 +29,15 @@ using std::string;
  * below.
  */
 GraphicsWindowInputDevice::
-GraphicsWindowInputDevice(GraphicsWindow *host, const string &name, bool pointer, bool keyboard) :
-  InputDevice(name, DeviceClass::virtual_device)
+GraphicsWindowInputDevice(GraphicsWindow *host, std::string name, bool pointer, bool keyboard) :
+  InputDevice(std::move(name), DeviceClass::VIRTUAL)
 {
   if (pointer) {
-    enable_feature(Feature::pointer);
-    add_pointer(PointerType::mouse, 0);
+    enable_feature(Feature::POINTER);
+    add_pointer(PointerType::MOUSE, 0);
   }
   if (keyboard) {
-    enable_feature(Feature::keyboard);
+    enable_feature(Feature::KEYBOARD);
   }
 }
 
@@ -46,8 +46,8 @@ GraphicsWindowInputDevice(GraphicsWindow *host, const string &name, bool pointer
  * device, no keyboard.
  */
 PT(GraphicsWindowInputDevice) GraphicsWindowInputDevice::
-pointer_only(GraphicsWindow *host, const string &name) {
-  return new GraphicsWindowInputDevice(host, name, true, false);
+pointer_only(GraphicsWindow *host, std::string name) {
+  return new GraphicsWindowInputDevice(host, std::move(name), true, false);
 }
 
 /**
@@ -55,8 +55,8 @@ pointer_only(GraphicsWindow *host, const string &name) {
  * pointing device.
  */
 PT(GraphicsWindowInputDevice) GraphicsWindowInputDevice::
-keyboard_only(GraphicsWindow *host, const string &name) {
-  return new GraphicsWindowInputDevice(host, name, false, true);
+keyboard_only(GraphicsWindow *host, std::string name) {
+  return new GraphicsWindowInputDevice(host, std::move(name), false, true);
 }
 
 /**
@@ -64,8 +64,8 @@ keyboard_only(GraphicsWindow *host, const string &name) {
  * pointer.
  */
 PT(GraphicsWindowInputDevice) GraphicsWindowInputDevice::
-pointer_and_keyboard(GraphicsWindow *host, const string &name) {
-  return new GraphicsWindowInputDevice(host, name, true, true);
+pointer_and_keyboard(GraphicsWindow *host, std::string name) {
+  return new GraphicsWindowInputDevice(host, std::move(name), true, true);
 }
 
 /**
@@ -115,12 +115,12 @@ keystroke(int keycode, double time) {
  * especially Chinese/Japanese/Korean.
  */
 void GraphicsWindowInputDevice::
-candidate(const std::wstring &candidate_string, size_t highlight_start,
+candidate(std::wstring candidate_string, size_t highlight_start,
           size_t highlight_end, size_t cursor_pos) {
   LightMutexHolder holder(_lock);
-  _button_events->add_event(ButtonEvent(candidate_string,
-                                       highlight_start, highlight_end,
-                                       cursor_pos));
+  _button_events->add_event(ButtonEvent(std::move(candidate_string),
+                                        highlight_start, highlight_end,
+                                        cursor_pos));
 }
 
 /**
@@ -167,7 +167,7 @@ set_pointer_in_window(double x, double y, double time) {
   LightMutexHolder holder(_lock);
   PointerData data = _pointers[0];
   data._id = 0;
-  data._type = PointerType::mouse;
+  data._type = PointerType::MOUSE;
   data._xpos = x;
   data._ypos = y;
   data._in_window = true;

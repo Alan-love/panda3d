@@ -24,8 +24,9 @@ class FactoryParams;
 /**
  * Applies a scale to audio volume for positional sounds in the scene graph.
  */
-class EXPCL_PANDA_PGRAPH AudioVolumeAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH AudioVolumeAttrib final : public RenderAttrib {
 protected:
+  friend class StaticObject<AudioVolumeAttrib>;
   AudioVolumeAttrib(bool off, PN_stdfloat volume);
   INLINE AudioVolumeAttrib(const AudioVolumeAttrib &copy);
 
@@ -83,7 +84,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "AudioVolumeAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100, new AudioVolumeAttrib(false, 1));
+    static StaticObject<AudioVolumeAttrib> default_attrib(false, 1);
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

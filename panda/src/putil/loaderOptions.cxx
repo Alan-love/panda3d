@@ -24,6 +24,9 @@ LoaderOptions::
 LoaderOptions(int flags) :
   _flags(flags),
   _texture_flags(0),
+  _texture_format(0),
+  _texture_compress(0),
+  _texture_quality(0),
   _texture_num_views(0),
   _auto_texture_scale(ATS_unspecified)
 {
@@ -104,7 +107,7 @@ output(std::ostream &out) const {
  */
 void LoaderOptions::
 write_flag(std::ostream &out, string &sep,
-           const string &flag_name, int flag) const {
+           std::string_view flag_name, int flag) const {
   if ((_flags & flag) == flag) {
     out << sep << flag_name;
     sep = " | ";
@@ -116,7 +119,7 @@ write_flag(std::ostream &out, string &sep,
  */
 void LoaderOptions::
 write_texture_flag(std::ostream &out, string &sep,
-                   const string &flag_name, int flag) const {
+                   std::string_view flag_name, int flag) const {
   if ((_texture_flags & flag) == flag) {
     out << sep << flag_name;
     sep = " | ";

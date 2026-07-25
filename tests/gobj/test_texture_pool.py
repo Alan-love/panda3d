@@ -46,19 +46,19 @@ def pool():
 @pytest.fixture(scope='session')
 def image_gray_path():
     "Generates a grayscale image."
-    yield from yield_image('-gray.png', channels=1)
+    yield from yield_image('.bw', channels=1)
 
 
 @pytest.fixture(scope='session')
 def image_rgb_path():
     "Generates an RGB image."
-    yield from yield_image('-rgb.png', channels=3)
+    yield from yield_image('.rgb', channels=3)
 
 
 @pytest.fixture(scope='session')
 def image_rgba_path():
     "Generates an RGBA image."
-    yield from yield_image('-rgba.png', channels=4)
+    yield from yield_image('.rgba', channels=4)
 
 
 @pytest.fixture(scope='function')
@@ -150,10 +150,9 @@ def test_load_texture_rgb(pool, image_rgb_path):
 
 
 def test_load_texture_rgb4(pool, image_rgb_path):
-    # Will not increase this
     tex = pool.load_texture(image_rgb_path, 4)
     assert pool.has_texture(image_rgb_path)
-    assert tex.num_components == 3
+    assert tex.num_components == 4
 
 
 def test_load_texture_rgb3(pool, image_rgb_path):
@@ -163,8 +162,7 @@ def test_load_texture_rgb3(pool, image_rgb_path):
 
 
 def test_load_texture_rgb2(pool, image_rgb_path):
-    # Cannot reduce this, since it would add an alpha channel
-    tex = pool.load_texture(image_rgb_path, 2)
+    tex = pool.load_texture(image_rgb_path, 3)
     assert pool.has_texture(image_rgb_path)
     assert tex.num_components == 3
 
@@ -191,7 +189,6 @@ def test_load_texture_rgba3_alpha(pool, image_rgba_path, image_gray_path):
 
 
 def test_load_texture_rgba2_alpha(pool, image_rgba_path, image_gray_path):
-    #FIXME: why is this not consistent with test_load_texture_rgb2_alpha?
     tex = pool.load_texture(image_rgba_path, image_gray_path, 2)
     assert tex.num_components == 2
 
@@ -217,14 +214,19 @@ def test_load_texture_rgb3_alpha(pool, image_rgb_path, image_gray_path):
 
 
 def test_load_texture_rgb2_alpha(pool, image_rgb_path, image_gray_path):
-    #FIXME: why is this not consistent with test_load_texture_rgba2_alpha?
     tex = pool.load_texture(image_rgb_path, image_gray_path, 2)
-    assert tex.num_components == 4
+    assert tex.num_components == 2
 
 
 def test_load_texture_rgb1_alpha(pool, image_rgb_path, image_gray_path):
     tex = pool.load_texture(image_rgb_path, image_gray_path, 1)
     assert tex.num_components == 2
+
+
+def test_reuse_texture(pool, image_rgba_path):
+    tex1 = pool.load_texture(image_rgba_path)
+    tex2 = pool.load_texture(image_rgba_path)
+    assert tex1 == tex2
 
 
 def test_reload_texture_fewer_channels(pool, image_rgba_path):
@@ -255,11 +257,55 @@ def test_reload_texture_with_alpha(pool, image_rgb_path, image_gray_path):
 
 
 def test_reload_texture_without_alpha(pool, image_rgb_path, image_gray_path):
-    tex = pool.load_texture(image_rgb_path, image_gray_path)
-    assert tex.num_components == 4
+    tex1 = pool.load_texture(image_rgb_path, image_gray_path)
+    assert tex1.num_components == 4
 
-    tex = pool.load_texture(image_rgb_path)
-    assert tex.num_components == 3
+    tex2 = pool.load_texture(image_rgb_path)
+    assert tex2.num_components == 3
+
+    assert tex1.num_components == 4
+    assert tex1 != tex2
+
+
+def test_reload_texture_different_sampler(pool, image_rgb_path):
+    sampler = core.SamplerState()
+    sampler.wrap_u = core.Texture.WM_clamp
+    tex1 = pool.load_texture(image_rgb_path, 0, False, core.LoaderOptions(), sampler)
+    assert tex1.wrap_u == core.Texture.WM_clamp
+
+    sampler = core.SamplerState()
+    sampler.wrap_u = core.Texture.WM_repeat
+    tex2 = pool.load_texture(image_rgb_path, 0, False, core.LoaderOptions(), sampler)
+    assert tex2.wrap_u == core.Texture.WM_repeat
+
+    assert tex1.wrap_u == core.Texture.WM_clamp
+    assert tex1 != tex2
+
+
+def test_reload_texture_with_force_srgb(pool, image_rgb_path):
+    tex1 = pool.load_texture(image_rgb_path)
+    assert tex1.format == core.Texture.F_rgb
+
+    options = core.LoaderOptions()
+    options.set_texture_flags(options.get_texture_flags() | core.LoaderOptions.TF_force_srgb)
+    tex2 = pool.load_texture(image_rgb_path, 0, False, options)
+    assert tex2.format == core.Texture.F_srgb
+
+    assert tex1.format == core.Texture.F_rgb
+    assert tex1 != tex2
+
+
+def test_reload_texture_with_format(pool, image_rgb_path):
+    tex1 = pool.load_texture(image_rgb_path)
+    assert tex1.format == core.Texture.F_rgb
+
+    options = core.LoaderOptions()
+    options.set_texture_format(core.Texture.F_rgb5)
+    tex2 = pool.load_texture(image_rgb_path, 0, False, options)
+    assert tex2.format == core.Texture.F_rgb5
+
+    assert tex1.format == core.Texture.F_rgb
+    assert tex1 != tex2
 
 
 def test_empty_texture_filters(pool):

@@ -13,6 +13,7 @@
  */
 
 #include "audioSound.h"
+#include "vector_string.h"
 
 using std::ostream;
 
@@ -29,10 +30,20 @@ AudioSound::
  *
  */
 AudioSound::
-AudioSound() {
+AudioSound(bool positional) : _positional(positional) {
   // Intentionally blank.
 }
 
+/*
+ * Copies an OpenALAudioSound into a new OpenALAudioSound.
+ * Not implemented in FMOD!
+ */
+AudioSound *AudioSound::
+make_copy() const {
+  // Intentionally blank.
+  audio_cat.error() << "Copying " << (*this) << "failed: copying an AudioSound object is currently only available with OpenAL.\n";
+  return nullptr;
+}
 
 void AudioSound::
 set_3d_attributes(PN_stdfloat px, PN_stdfloat py, PN_stdfloat pz, PN_stdfloat vx, PN_stdfloat vy, PN_stdfloat vz) {
@@ -42,6 +53,17 @@ set_3d_attributes(PN_stdfloat px, PN_stdfloat py, PN_stdfloat pz, PN_stdfloat vx
 void AudioSound::
 get_3d_attributes(PN_stdfloat *px, PN_stdfloat *py, PN_stdfloat *pz, PN_stdfloat *vx, PN_stdfloat *vy, PN_stdfloat *vz) {
   // Intentionally blank.
+}
+
+void AudioSound::
+set_3d_direction(LVector3 d) {
+  // Intentionally blank.
+}
+
+LVector3 AudioSound::
+get_3d_direction() const {
+  // Intentionally blank.
+  return { 0.0f, 0.0f, 0.0f };
 }
 
 void AudioSound::
@@ -62,6 +84,39 @@ set_3d_max_distance(PN_stdfloat dist) {
 
 PN_stdfloat AudioSound::
 get_3d_max_distance() const {
+  // Intentionally blank.
+  return 0.0f;
+}
+
+void AudioSound::
+set_3d_cone_inner_angle(PN_stdfloat angle) {
+  // Intentionally blank.
+}
+
+PN_stdfloat AudioSound::
+get_3d_cone_inner_angle() const {
+  // Intentionally blank.
+  return 0.0f;
+}
+
+void AudioSound::
+set_3d_cone_outer_angle(PN_stdfloat angle) {
+  // Intentionally blank.
+}
+
+PN_stdfloat AudioSound::
+get_3d_cone_outer_angle() const {
+  // Intentionally blank.
+  return 0.0f;
+}
+
+void AudioSound::
+set_3d_cone_outer_gain(PN_stdfloat gain) {
+  // Intentionally blank.
+}
+
+PN_stdfloat AudioSound::
+get_3d_cone_outer_gain() const {
   // Intentionally blank.
   return 0.0f;
 }
@@ -151,4 +206,63 @@ operator << (ostream &out, AudioSound::SoundStatus status) {
   }
 
   return out << "**invalid AudioSound::SoundStatus(" << (int)status << ")**";
+}
+
+static const vector_string empty;
+
+/**
+ * Get the comment attached to this AudioSound as a list of strings.
+ */
+const vector_string& AudioSound::
+get_raw_comment() const {
+  return empty;
+}
+
+/**
+ * Returns true if this AudioSound has a comment with the given key,
+ * i.e. "author". Case-sensitive.
+ */
+bool AudioSound::
+has_comment(std::string_view key) const {
+  for (const std::string &st : get_raw_comment()) {
+    if (st.size() > key.size() && st[key.size()] == '=' &&
+        st.compare(0, key.size(), key) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns the value for a given key in the comment. If the key is not present,
+ * returns an empty string.
+ */
+std::string AudioSound::
+get_comment(std::string_view key) const {
+  for (const std::string &st : get_raw_comment()) {
+    if (st.size() > key.size() && st[key.size()] == '=' &&
+        st.compare(0, key.size(), key) == 0) {
+      return st.substr(key.size() + 1);
+    }
+  }
+  return "";
+}
+
+/**
+ * Returns the number of comments this sound has.
+ */
+int AudioSound::
+get_num_raw_comments() const {
+  return get_raw_comment().size();
+}
+
+/**
+ * Returns the comment at a given index.
+ */
+std::string AudioSound::
+get_raw_comment(int index) const {
+  if (index >= get_num_raw_comments() || index < 0) {
+    return "";
+  }
+  return get_raw_comment()[index];
 }

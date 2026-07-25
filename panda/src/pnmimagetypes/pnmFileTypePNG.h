@@ -39,16 +39,16 @@ public:
   virtual std::string get_suggested_extension() const;
 
   virtual bool has_magic_number() const;
-  virtual bool matches_magic_number(const std::string &magic_number) const;
+  virtual bool matches_magic_number(std::string_view magic_number) const;
 
   virtual PNMReader *make_reader(std::istream *file, bool owns_file = true,
-                                 const std::string &magic_number = std::string());
+                                 std::string_view magic_number = std::string_view());
   virtual PNMWriter *make_writer(std::ostream *file, bool owns_file = true);
 
 public:
   class Reader : public PNMReader {
   public:
-    Reader(PNMFileType *type, std::istream *file, bool owns_file, std::string magic_number);
+    Reader(PNMFileType *type, std::istream *file, bool owns_file, std::string_view magic_number);
     virtual ~Reader();
 
     virtual int read_data(xel *array, xelval *alpha_data);
@@ -58,8 +58,8 @@ public:
     static void png_read_data(png_structp png_ptr, png_bytep data,
                               png_size_t length);
 
-    static void png_error(png_structp png_ptr, png_const_charp error_msg);
-    static void png_warning(png_structp png_ptr, png_const_charp warning_msg);
+    static void (png_error)(png_structp png_ptr, png_const_charp error_msg);
+    static void (png_warning)(png_structp png_ptr, png_const_charp warning_msg);
 
     png_structp _png;
     png_infop _info;
@@ -84,8 +84,8 @@ public:
                                png_size_t length);
     static void png_flush_data(png_structp png_ptr);
 
-    static void png_error(png_structp png_ptr, png_const_charp error_msg);
-    static void png_warning(png_structp png_ptr, png_const_charp warning_msg);
+    static void (png_error)(png_structp png_ptr, png_const_charp error_msg);
+    static void (png_warning)(png_structp png_ptr, png_const_charp warning_msg);
 
     png_structp _png;
     png_infop _info;
@@ -101,7 +101,7 @@ public:
   static void register_with_read_factory();
 
 protected:
-  static TypedWritable *make_PNMFileTypePNG(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 public:
   static TypeHandle get_class_type() {

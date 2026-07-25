@@ -53,6 +53,8 @@ PandaSystem() :
   set_system_tag("system", "malloc", "dlmalloc");
 #elif defined(USE_MEMORY_PTMALLOC2)
   set_system_tag("system", "malloc", "ptmalloc2");
+#elif defined(USE_MEMORY_MIMALLOC)
+  set_system_tag("system", "malloc", "mimalloc");
 #else
   set_system_tag("system", "malloc", "malloc");
 #endif
@@ -233,7 +235,7 @@ get_platform() {
  * implementation defined.
  */
 bool PandaSystem::
-has_system(const string &system) const {
+has_system(std::string_view system) const {
   Systems::const_iterator si;
   si = _systems.find(system);
   return (si != _systems.end());
@@ -276,7 +278,7 @@ get_system(size_t n) const {
  * or if does not define the indicated tag.
  */
 string PandaSystem::
-get_system_tag(const string &system, const string &tag) const {
+get_system_tag(std::string_view system, std::string_view tag) const {
   Systems::const_iterator si;
   si = _systems.find(system);
   if (si != _systems.end()) {
@@ -295,7 +297,7 @@ get_system_tag(const string &system, const string &tag) const {
  * Intended for use by each subsystem to register itself at startup.
  */
 void PandaSystem::
-add_system(const string &system) {
+add_system(std::string_view system) {
   bool inserted = _systems.insert(Systems::value_type(system, SystemTags(get_class_type()))).second;
   if (inserted) {
     _system_names_dirty = true;
@@ -307,8 +309,7 @@ add_system(const string &system) {
  * startup.
  */
 void PandaSystem::
-set_system_tag(const string &system, const string &tag,
-               const string &value) {
+set_system_tag(std::string_view system, std::string tag, std::string value) {
   std::pair<Systems::iterator, bool> result;
   result = _systems.insert(Systems::value_type(system, SystemTags(get_class_type())));
   if (result.second) {
@@ -316,7 +317,7 @@ set_system_tag(const string &system, const string &tag,
   }
 
   SystemTags &tags = (*result.first).second;
-  tags[tag] = value;
+  tags[std::move(tag)] = std::move(value);
 }
 
 /**

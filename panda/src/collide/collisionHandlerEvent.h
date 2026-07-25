@@ -41,22 +41,22 @@ public:
 
 PUBLISHED:
   INLINE void clear_in_patterns();
-  INLINE void add_in_pattern(const std::string &in_pattern);
-  INLINE void set_in_pattern(const std::string &in_pattern);
+  INLINE void add_in_pattern(std::string in_pattern);
+  INLINE void set_in_pattern(std::string in_pattern);
   INLINE int get_num_in_patterns() const;
   INLINE std::string get_in_pattern(int n) const;
   MAKE_SEQ(get_in_patterns, get_num_in_patterns, get_in_pattern);
 
   INLINE void clear_again_patterns();
-  INLINE void add_again_pattern(const std::string &again_pattern);
-  INLINE void set_again_pattern(const std::string &again_pattern);
+  INLINE void add_again_pattern(std::string again_pattern);
+  INLINE void set_again_pattern(std::string again_pattern);
   INLINE int get_num_again_patterns() const;
   INLINE std::string get_again_pattern(int n) const;
   MAKE_SEQ(get_again_patterns, get_num_again_patterns, get_again_pattern);
 
   INLINE void clear_out_patterns();
-  INLINE void add_out_pattern(const std::string &out_pattern);
-  INLINE void set_out_pattern(const std::string &out_pattern);
+  INLINE void add_out_pattern(std::string out_pattern);
+  INLINE void set_out_pattern(std::string out_pattern);
   INLINE int get_num_out_patterns() const;
   INLINE std::string get_out_pattern(int n) const;
   MAKE_SEQ(get_out_patterns, get_num_out_patterns, get_out_pattern);
@@ -69,15 +69,15 @@ PUBLISHED:
   void flush();
 
   // These help implement Python pickle support.
-  EXTENSION(PyObject *__reduce__(PyObject *self) const);
-  EXTENSION(void __setstate__(PyObject *self, vector_uchar data));
+  PY_EXTENSION(PyObject *__reduce__(PyObject *self) const);
+  PY_EXTENSION(void __setstate__(PyObject *self, vector_uchar data));
 
   virtual void write_datagram(Datagram &destination) const;
   virtual void read_datagram(DatagramIterator &source);
 
 protected:
   void throw_event_for(const vector_string &patterns, CollisionEntry *entry);
-  void throw_event_pattern(const std::string &pattern, CollisionEntry *entry);
+  void throw_event_pattern(std::string_view pattern, CollisionEntry *entry);
 
   vector_string _in_patterns;
   vector_string _again_patterns;
@@ -90,7 +90,6 @@ protected:
     INLINE bool
     operator () (const PT(CollisionEntry) &a,
                  const PT(CollisionEntry) &b) const;
-    INLINE void operator = (const SortEntries &other);
   };
 
   typedef pset<PT(CollisionEntry), SortEntries> Colliding;

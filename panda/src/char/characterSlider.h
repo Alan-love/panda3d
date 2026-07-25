@@ -31,7 +31,7 @@ protected:
   CharacterSlider(const CharacterSlider &copy);
 
 PUBLISHED:
-  explicit CharacterSlider(PartGroup *parent, const std::string &name,
+  explicit CharacterSlider(PartGroup *parent, std::string name,
                            PN_stdfloat default_value = 0);
   virtual ~CharacterSlider();
 
@@ -49,7 +49,7 @@ private:
 public:
   static void register_with_read_factory();
 
-  static TypedWritable *make_CharacterSlider(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 public:
   virtual TypeHandle get_type() const {

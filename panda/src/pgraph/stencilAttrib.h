@@ -25,9 +25,10 @@ class FactoryParams;
  * make or make_2_sided.  To determine if two sided stencil is supported, call
  * the function GraphicsStateGuardian:: get_supports_two_sided_stencil.
  */
-class EXPCL_PANDA_PGRAPH StencilAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH StencilAttrib final : public RenderAttrib {
 
 private:
+  friend class StaticObject<StencilAttrib>;
   StencilAttrib();
 
 PUBLISHED:
@@ -173,7 +174,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "StencilAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100, new StencilAttrib);
+    static StaticObject<StencilAttrib> default_attrib;
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

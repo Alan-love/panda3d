@@ -104,13 +104,13 @@ PUBLISHED:
 
   BLOCKING bool read(const Filename &filename, PNMFileType *type = nullptr,
                      bool report_unknown_type = true);
-  BLOCKING bool read(std::istream &data, const std::string &filename = std::string(),
+  BLOCKING bool read(std::istream &data, std::string_view filename = std::string_view(),
                      PNMFileType *type = nullptr,
                      bool report_unknown_type = true);
   BLOCKING bool read(PNMReader *reader);
 
   BLOCKING bool write(const Filename &filename, PNMFileType *type = nullptr) const;
-  BLOCKING bool write(std::ostream &data, const std::string &filename = std::string(),
+  BLOCKING bool write(std::ostream &data, std::string_view filename = std::string_view(),
                       PNMFileType *type = nullptr) const;
   BLOCKING bool write(PNMWriter *writer) const;
 
@@ -258,7 +258,8 @@ PUBLISHED:
   void make_histogram(Histogram &hist);
   void quantize(size_t max_colors);
   BLOCKING void perlin_noise_fill(float sx, float sy, int table_size = 256,
-                                  unsigned long seed = 0);
+                                  unsigned long seed = 0,
+                                  float ox = 0, float oy = 0);
   void perlin_noise_fill(StackedPerlinNoise2 &perlin);
 
   void remix_channels(const LMatrix4 &conv);

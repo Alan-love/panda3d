@@ -3,16 +3,28 @@ import sys, os
 import pytest
 
 
-@pytest.mark.skipif(sys.version_info < (3, 6), reason="Requires Python 3.6")
 def test_filename_fspath():
     fn = Filename.from_os_specific(__file__)
     assert os.fspath(fn) == fn.to_os_specific_w()
 
 
-@pytest.mark.skipif(sys.version_info < (3, 6), reason="Requires Python 3.6")
 def test_filename_open():
     fn = Filename.from_os_specific(__file__)
     open(fn, 'rb')
+
+
+def test_filename_set_extension():
+    fn = Filename('test.txt')
+    fn.set_extension('abc')
+    assert fn.get_fullpath() == 'test.abc'
+
+    fn = Filename('test.a.b')
+    fn.set_extension('c')
+    assert fn.get_fullpath() == 'test.a.c'
+
+    fn = Filename('test')
+    fn.set_extension('ext')
+    assert fn.get_fullpath() == 'test.ext'
 
 
 def test_filename_ctor_pathlib():

@@ -24,6 +24,7 @@
 #include "renderState.h"
 #include "pointerTo.h"
 #include "pmap.h"
+#include "small_vector.h"
 #include "auxSceneData.h"
 
 class DisplayRegion;
@@ -34,7 +35,7 @@ class DisplayRegion;
  */
 class EXPCL_PANDA_PGRAPH Camera : public LensNode {
 PUBLISHED:
-  explicit Camera(const std::string &name, Lens *lens = new PerspectiveLens());
+  explicit Camera(std::string name, Lens *lens = new PerspectiveLens());
   Camera(const Camera &copy);
 
 public:
@@ -78,7 +79,7 @@ PUBLISHED:
   INLINE CPT(RenderState) get_initial_state() const;
   MAKE_PROPERTY(initial_state, get_initial_state, set_initial_state);
 
-  INLINE void set_tag_state_key(const std::string &tag_state_key);
+  INLINE void set_tag_state_key(std::string tag_state_key);
   INLINE const std::string &get_tag_state_key() const;
   MAKE_PROPERTY(tag_state_key, get_tag_state_key, set_tag_state_key);
 
@@ -86,11 +87,11 @@ PUBLISHED:
   INLINE PN_stdfloat get_lod_scale() const;
   MAKE_PROPERTY(lod_scale, get_lod_scale, set_lod_scale);
 
-  void set_tag_state(const std::string &tag_state, const RenderState *state);
-  void clear_tag_state(const std::string &tag_state);
+  void set_tag_state(std::string tag_state, const RenderState *state);
+  void clear_tag_state(std::string_view tag_state);
   void clear_tag_states();
-  bool has_tag_state(const std::string &tag_state) const;
-  CPT(RenderState) get_tag_state(const std::string &tag_state) const;
+  bool has_tag_state(std::string_view tag_state) const;
+  CPT(RenderState) get_tag_state(std::string_view tag_state) const;
   MAKE_MAP_PROPERTY(tag_states, has_tag_state, get_tag_state,
                     set_tag_state, clear_tag_state);
 
@@ -115,13 +116,13 @@ private:
   DrawMask _camera_mask;
   PN_stdfloat _lod_scale;
 
-  typedef pvector<DisplayRegion *> DisplayRegions;
+  typedef small_vector<DisplayRegion *> DisplayRegions;
   DisplayRegions _display_regions;
 
   CPT(RenderState) _initial_state;
   std::string _tag_state_key;
 
-  typedef pmap<std::string, CPT(RenderState) > TagStates;
+  typedef pmap<std::string, CPT(RenderState), std::less<>> TagStates;
   TagStates _tag_states;
 
   typedef pmap<NodePath, PT(AuxSceneData) > AuxData;

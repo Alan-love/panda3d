@@ -22,6 +22,7 @@
 #include "threadImpl.h"
 #include "pnotify.h"
 #include "config_pipeline.h"
+#include "patomic.h"
 
 #ifdef ANDROID
 typedef struct _JNIEnv JNIEnv;
@@ -42,9 +43,10 @@ class AsyncTask;
  * object will automatically be destructed if no other pointers are
  * referencing it.
  */
-class EXPCL_PANDA_PIPELINE Thread : public TypedReferenceCount, public Namable {
+// Due to a GCC bug, we can't use alignas() together with an attribute.
+class ALIGN_64BYTE EXPCL_PANDA_PIPELINE Thread : public TypedReferenceCount, public Namable {
 protected:
-  Thread(const std::string &name, const std::string &sync_name);
+  Thread(std::string name, std::string sync_name);
   Thread(const Thread &copy) = delete;
 
 PUBLISHED:
@@ -79,6 +81,9 @@ PUBLISHED:
 
   BLOCKING INLINE static void force_yield();
   BLOCKING INLINE static void consider_yield();
+  BLOCKING INLINE static void relax();
+
+  INLINE static bool get_context_switches(size_t &total, size_t &involuntary);
 
   virtual void output(std::ostream &out) const;
   void output_blocker(std::ostream &out) const;
@@ -124,6 +129,7 @@ public:
     virtual ~PStatsCallback();
     virtual void deactivate_hook(Thread *thread);
     virtual void activate_hook(Thread *thread);
+    virtual void delete_hook(Thread *thread);
   };
 
   INLINE void set_pstats_index(int pstats_index);
@@ -148,7 +154,7 @@ private:
   int _pipeline_stage;
   PStatsCallback *_pstats_callback;
   bool _joinable;
-  AtomicAdjust::Pointer _current_task;
+  patomic<TypedReferenceCount *> _current_task;
 
   int _python_index;
 
@@ -160,6 +166,10 @@ private:
 private:
   static Thread *_main_thread;
   static Thread *_external_thread;
+
+  static void (*_sleep_func)(double);
+  static void (*_yield_func)();
+  friend class PStatClientImpl;
 
 public:
   static TypeHandle get_class_type() {

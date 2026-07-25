@@ -18,6 +18,7 @@
 #include "pandabase.h"
 #include "eventParameter.h"
 #include "typedReferenceCount.h"
+#include "small_vector.h"
 
 class EventReceiver;
 
@@ -32,12 +33,12 @@ class EventReceiver;
  */
 class EXPCL_PANDA_EVENT Event : public TypedReferenceCount {
 PUBLISHED:
-  Event(const std::string &event_name, EventReceiver *receiver = nullptr);
+  Event(std::string event_name, EventReceiver *receiver = nullptr);
   Event(const Event &copy);
   void operator = (const Event &copy);
   ~Event();
 
-  INLINE void set_name(const std::string &name);
+  INLINE void set_name(std::string name);
   INLINE void clear_name();
   INLINE bool has_name() const;
   INLINE const std::string &get_name() const;
@@ -60,7 +61,7 @@ PUBLISHED:
   MAKE_PROPERTY2(receiver, has_receiver, get_receiver, set_receiver, clear_receiver);
 
 protected:
-  typedef pvector<EventParameter> ParameterList;
+  typedef small_vector<EventParameter> ParameterList;
   ParameterList _parameters;
   EventReceiver *_receiver;
 

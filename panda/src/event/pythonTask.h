@@ -28,7 +28,7 @@
  */
 class PythonTask final : public AsyncTask {
 PUBLISHED:
-  PythonTask(PyObject *function = Py_None, const std::string &name = std::string());
+  PythonTask(PyObject *function = Py_None, std::string name = "");
   virtual ~PythonTask();
   ALLOC_DELETED_CHAIN(PythonTask);
 
@@ -89,6 +89,14 @@ PUBLISHED:
   // custom variables may be stored.
   PyObject *__dict__;
 
+public:
+  // This holds a reference to the Python wrapper corresponding to this
+  // PythonTask object.  It is necessary for this to remain consistent for
+  // the __traverse__ method to work correctly.
+  mutable PyObject *__self__ = nullptr;
+
+  virtual bool unref() const;
+
 protected:
   virtual bool cancel();
 
@@ -106,7 +114,7 @@ private:
 
 private:
   PyObject *_function;
-  PyObject *_args;
+  pvector<PyObject *> _args;
   PyObject *_upon_death;
   PyObject *_owner;
 

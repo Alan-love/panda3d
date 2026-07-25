@@ -28,8 +28,8 @@ TypeHandle FadeLODNode::_type_handle;
  *
  */
 FadeLODNode::
-FadeLODNode(const std::string &name) :
-  LODNode(name)
+FadeLODNode(std::string name) :
+  LODNode(std::move(name))
 {
   set_cull_callback();
 
@@ -164,54 +164,37 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
 
         nassertr(elapsed >= 0.0f && elapsed <= _fade_time, false);
 
+        Children children = get_children();
         if (elapsed < half_fade_time) {
           // FIRST HALF OF FADE Fade the new LOD in with z writing off Keep
           // drawing the old LOD opaque with z writing on
-          if (out_child >= 0 && out_child < get_num_children()) {
-            PandaNode *child = get_child(out_child);
-            if (child != nullptr) {
-              CullTraverserData next_data_out(data, child);
-              next_data_out._state =
-                next_data_out._state->compose(get_fade_1_old_state());
-              trav->traverse(next_data_out);
-            }
+          if (out_child >= 0 && (size_t)out_child < children.get_num_children()) {
+            const PandaNode::DownConnection &child = children.get_child_connection(out_child);
+            trav->traverse_down(data, child,
+              data._state->compose(get_fade_1_old_state()));
           }
 
-          if (in_child >= 0 && in_child < get_num_children()) {
-            PandaNode *child = get_child(in_child);
-            if (child != nullptr) {
-              CullTraverserData next_data_in(data, child);
-
-              PN_stdfloat in_alpha = elapsed / half_fade_time;
-              next_data_in._state =
-                next_data_in._state->compose(get_fade_1_new_state(in_alpha));
-              trav->traverse(next_data_in);
-            }
+          if (in_child >= 0 && (size_t)in_child < children.get_num_children()) {
+            const PandaNode::DownConnection &child = children.get_child_connection(in_child);
+            PN_stdfloat in_alpha = elapsed / half_fade_time;
+            trav->traverse_down(data, child,
+              data._state->compose(get_fade_1_new_state(in_alpha)));
           }
 
         } else {
           // SECOND HALF OF FADE: Fade out the old LOD with z write off and
           // draw the opaque new LOD with z write on
-          if (in_child >= 0 && in_child < get_num_children()) {
-            PandaNode *child = get_child(in_child);
-            if (child != nullptr) {
-              CullTraverserData next_data_in(data, child);
-              next_data_in._state =
-                next_data_in._state->compose(get_fade_2_new_state());
-              trav->traverse(next_data_in);
-            }
+          if (in_child >= 0 && (size_t)in_child < children.get_num_children()) {
+            const PandaNode::DownConnection &child = children.get_child_connection(in_child);
+            trav->traverse_down(data, child,
+              data._state->compose(get_fade_2_new_state()));
           }
 
-          if (out_child >= 0 && out_child < get_num_children()) {
-            PandaNode *child = get_child(out_child);
-            if (child != nullptr) {
-              CullTraverserData next_data_out(data, child);
-
-              PN_stdfloat out_alpha = 1.0f - (elapsed - half_fade_time) / half_fade_time;
-              next_data_out._state =
-                next_data_out._state->compose(get_fade_2_old_state(out_alpha));
-              trav->traverse(next_data_out);
-            }
+          if (out_child >= 0 && (size_t)out_child < children.get_num_children()) {
+            const PandaNode::DownConnection &child = children.get_child_connection(out_child);
+            PN_stdfloat out_alpha = 1.0f - (elapsed - half_fade_time) / half_fade_time;
+            trav->traverse_down(data, child,
+              data._state->compose(get_fade_2_old_state(out_alpha)));
           }
         }
       }
@@ -222,12 +205,10 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
     // This is the normal case: we're not in the middle of a transition; we're
     // just drawing one child of the LOD.
     int index = ldata->_fade_in;
-    if (index >= 0 && index < get_num_children()) {
-      PandaNode *child = get_child(index);
-      if (child != nullptr) {
-        CullTraverserData next_data(data, child);
-        trav->traverse(next_data);
-      }
+    Children children = get_children();
+    if (index >= 0 && (size_t)index < children.get_num_children()) {
+      const PandaNode::DownConnection &child = children.get_child_connection(index);
+      trav->traverse_down(data, child, data._state);
     }
   }
 
@@ -251,8 +232,8 @@ output(std::ostream &out) const {
  * of the geometry during a transition.
  */
 void FadeLODNode::
-set_fade_bin(const std::string &name, int draw_order) {
-  _fade_bin_name = name;
+set_fade_bin(std::string name, int draw_order) {
+  _fade_bin_name = std::move(name);
   _fade_bin_draw_order = draw_order;
   _fade_1_new_state.clear();
   _fade_2_old_state.clear();

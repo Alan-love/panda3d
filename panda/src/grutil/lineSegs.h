@@ -17,6 +17,7 @@
 #include "pandabase.h"
 
 #include "luse.h"
+#include "memoryBase.h"
 #include "geom.h"
 #include "geomNode.h"
 #include "geomVertexData.h"
@@ -32,7 +33,7 @@
  */
 class EXPCL_PANDA_GRUTIL LineSegs : public Namable {
 PUBLISHED:
-  explicit LineSegs(const std::string &name = "lines");
+  explicit LineSegs(std::string name = "lines");
   ~LineSegs();
 
   void reset();
@@ -65,7 +66,7 @@ PUBLISHED:
   INLINE void set_vertex_color(int vertex, PN_stdfloat r, PN_stdfloat g, PN_stdfloat b, PN_stdfloat a = 1.0f);
 
 private:
-  class Point {
+  class Point : public MemoryBase {
   public:
     INLINE Point();
     INLINE Point(const LVecBase3 &point, const LColor &color);

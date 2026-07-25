@@ -47,8 +47,8 @@ AnimChannelScalarTable(AnimGroup *parent, const AnimChannelScalarTable &copy) :
  *
  */
 AnimChannelScalarTable::
-AnimChannelScalarTable(AnimGroup *parent, const std::string &name) :
-  AnimChannelScalar(parent, name),
+AnimChannelScalarTable(AnimGroup *parent, std::string name) :
+  AnimChannelScalar(parent, std::move(name)),
   _table(get_class_type())
 {
 }
@@ -324,8 +324,8 @@ fillin(DatagramIterator& scan, BamReader* manager) {
 /**
  * Factory method to generate a AnimChannelScalarTable object
  */
-TypedWritable* AnimChannelScalarTable::
-make_AnimChannelScalarTable(const FactoryParams &params) {
+TypedWritable *AnimChannelScalarTable::
+make_from_bam(const FactoryParams &params) {
   AnimChannelScalarTable *me = new AnimChannelScalarTable;
   DatagramIterator scan;
   BamReader *manager;
@@ -340,5 +340,5 @@ make_AnimChannelScalarTable(const FactoryParams &params) {
  */
 void AnimChannelScalarTable::
 register_with_read_factory() {
-  BamReader::get_factory()->register_factory(get_class_type(), make_AnimChannelScalarTable);
+  BamReader::get_factory()->register_factory(get_class_type(), make_from_bam);
 }

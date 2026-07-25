@@ -24,11 +24,10 @@ TypeHandle PythonThread::_type_handle;
  */
 PythonThread::
 PythonThread(PyObject *function, PyObject *args,
-             const std::string &name, const std::string &sync_name) :
-  Thread(name, sync_name)
+             std::string name, std::string sync_name) :
+  Thread(std::move(name), std::move(sync_name))
 {
-  _function = function;
-  Py_INCREF(_function);
+  _function = Py_NewRef(function);
   _args = nullptr;
   _result = nullptr;
 
@@ -78,14 +77,13 @@ PyObject *PythonThread::
 join() {
   Thread::join();
 
-  if (_result == nullptr) {
+  PyObject *result = _result;
+  if (result == nullptr) {
     // No result; return None.
-    Py_INCREF(Py_None);
-    return Py_None;
+    result = Py_None;
   }
 
-  Py_INCREF(_result);
-  return _result;
+  return Py_NewRef(result);
 }
 
 /**
@@ -125,7 +123,7 @@ set_args(PyObject *args) {
  * exception.
  */
 PyObject *PythonThread::
-call_python_func(PyObject *function, PyObject *args) {
+call_python_func(PyObject *function, PyObject **args, size_t nargsf) {
   Thread *current_thread = get_current_thread();
 
   // Create a new Python thread state data structure, so Python can properly
@@ -134,7 +132,7 @@ call_python_func(PyObject *function, PyObject *args) {
 
   if (current_thread == get_main_thread()) {
     // In the main thread, just call the function.
-    result = PyObject_Call(function, args, nullptr);
+    result = _PyObject_Vectorcall(function, args, nargsf, nullptr);
 
     if (result == nullptr) {
       if (PyErr_Occurred() && PyErr_ExceptionMatches(PyExc_SystemExit)) {
@@ -147,10 +145,7 @@ call_python_func(PyObject *function, PyObject *args) {
         PyObject *exc, *val, *tb;
         PyErr_Fetch(&exc, &val, &tb);
 
-        Py_XINCREF(exc);
-        Py_XINCREF(val);
-        Py_XINCREF(tb);
-        PyErr_Restore(exc, val, tb);
+        PyErr_Restore(Py_XNewRef(exc), Py_XNewRef(val), Py_XNewRef(tb));
         PyErr_Print();
 
         PyErr_Restore(exc, val, tb);
@@ -194,7 +189,7 @@ call_python_func(PyObject *function, PyObject *args) {
     PyThreadState_Swap(new_thread_state);
 
     // Call the user's function.
-    result = PyObject_Call(function, args, nullptr);
+    result = _PyObject_Vectorcall(function, args, nargsf, nullptr);
     if (result == nullptr && PyErr_Occurred()) {
       // We got an exception.  Move the exception from the current thread into
       // the main thread, so it can be handled there.
@@ -206,10 +201,7 @@ call_python_func(PyObject *function, PyObject *args) {
 
       // Temporarily restore the exception state so we can print a callback
       // on-the-spot.
-      Py_XINCREF(exc);
-      Py_XINCREF(val);
-      Py_XINCREF(tb);
-      PyErr_Restore(exc, val, tb);
+      PyErr_Restore(Py_XNewRef(exc), Py_XNewRef(val), Py_XNewRef(tb));
       PyErr_Print();
 
       PyThreadState_Swap(orig_thread_state);
@@ -238,23 +230,26 @@ call_python_func(PyObject *function, PyObject *args) {
     gstate = PyGILState_Ensure();
 
     // Call the user's function.
-    result = PyObject_Call(function, args, nullptr);
+    result = _PyObject_Vectorcall(function, args, nargsf, nullptr);
     if (result == nullptr && PyErr_Occurred()) {
       // We got an exception.  Move the exception from the current thread into
       // the main thread, so it can be handled there.
       PyObject *exc, *val, *tb;
       PyErr_Fetch(&exc, &val, &tb);
 
-      thread_cat.error()
-        << "Exception occurred within " << *current_thread << "\n";
-
       // Temporarily restore the exception state so we can print a callback
-      // on-the-spot.
-      Py_XINCREF(exc);
-      Py_XINCREF(val);
-      Py_XINCREF(tb);
-      PyErr_Restore(exc, val, tb);
-      PyErr_Print();
+      // on-the-spot, except if it's a SystemExit, which would cause PyErr_Print
+      // to exit the process immediately.
+      if (exc != PyExc_SystemExit) {
+        thread_cat.error()
+          << "Exception occurred within " << *current_thread << "\n";
+
+        PyErr_Restore(Py_XNewRef(exc), Py_XNewRef(val), Py_XNewRef(tb));
+        PyErr_Print();
+      } else {
+        thread_cat.info()
+          << "SystemExit occurred within " << *current_thread << "\n";
+      }
 
       PyGILState_Release(gstate);
 
@@ -280,7 +275,9 @@ call_python_func(PyObject *function, PyObject *args) {
  */
 void PythonThread::
 thread_main() {
-  _result = call_python_func(_function, _args);
+  PyObject **args = &PyTuple_GET_ITEM(_args, 0);
+  Py_ssize_t nargs = PyTuple_GET_SIZE(_args);
+  _result = call_python_func(_function, args, (size_t)nargs);
 }
 
 #endif  // HAVE_PYTHON

@@ -91,6 +91,10 @@ public:
   void set_loop_count(unsigned long loop_count=1);
   unsigned long get_loop_count() const;
 
+  // loop_start: 0 = beginning.  expressed in seconds.  inits to 0.
+  void set_loop_start(PN_stdfloat loop_start=0);
+  PN_stdfloat get_loop_start() const;
+
   // 0 = beginning; length() = end.  inits to 0.0.
   void set_time(PN_stdfloat start_time=0.0);
   PN_stdfloat get_time() const;
@@ -133,7 +137,7 @@ public:
   bool get_active() const;
 
   void finished();
-  void set_finished_event(const std::string& event);
+  void set_finished_event(std::string event);
   const std::string& get_finished_event() const;
 
  private:

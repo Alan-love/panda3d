@@ -41,16 +41,18 @@ PUBLISHED:
   MAKE_SEQ_PROPERTY(pipe_types, get_num_pipe_types, get_pipe_type);
   void print_pipe_types() const;
 
-  PT(GraphicsPipe) make_pipe(const std::string &type_name,
-                             const std::string &module_name = std::string());
+  PT(GraphicsPipe) make_pipe(std::string_view type_name,
+                             std::string_view module_name = std::string_view());
   PT(GraphicsPipe) make_pipe(TypeHandle type);
-  PT(GraphicsPipe) make_module_pipe(const std::string &module_name);
+  PT(GraphicsPipe) make_module_pipe(std::string_view module_name);
   PT(GraphicsPipe) make_default_pipe();
 
   INLINE int get_num_aux_modules() const;
   void load_aux_modules();
 
   INLINE static GraphicsPipeSelection *get_global_ptr();
+
+  PY_EXTENSION(PyObject *__reduce__() const);
 
 public:
   typedef PT(GraphicsPipe) PipeConstructorFunc();
@@ -59,7 +61,7 @@ public:
 private:
   INLINE void load_default_module() const;
   void do_load_default_module();
-  TypeHandle load_named_module(const std::string &name);
+  TypeHandle load_named_module(std::string_view name);
 
   class LoadedModule {
   public:
@@ -67,7 +69,7 @@ private:
     void *_module_handle;
     TypeHandle _default_pipe_type;
   };
-  typedef pmap<std::string, LoadedModule> LoadedModules;
+  typedef pmap<std::string, LoadedModule, std::less<>> LoadedModules;
   LoadedModules _loaded_modules;
   LightMutex _loaded_modules_lock;
 
@@ -85,6 +87,7 @@ private:
   DisplayModules _display_modules;
   std::string _default_display_module;
   std::string _default_pipe_name;
+  TypeHandle _default_pipe_type;
   bool _default_module_loaded;
 
   static GraphicsPipeSelection *_global_ptr;
@@ -92,4 +95,4 @@ private:
 
 #include "graphicsPipeSelection.I"
 
-#endif
+#endif // !GRAPHICSPIPESELECTION_H

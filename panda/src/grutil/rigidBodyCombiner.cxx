@@ -30,10 +30,10 @@ TypeHandle RigidBodyCombiner::_type_handle;
  *
  */
 RigidBodyCombiner::
-RigidBodyCombiner(const std::string &name) : PandaNode(name) {
+RigidBodyCombiner(std::string name) : PandaNode(name) {
   set_cull_callback();
 
-  _internal_root = new PandaNode(name);
+  _internal_root = new PandaNode(std::move(name));
 
   // We don't want to perform any additional culling once we get within the
   // RigidBodyCombiner.  The internal Geom's bounding volume is not updated
@@ -145,8 +145,7 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
   }
 
   // Render the internal scene only--this is the optimized scene.
-  CullTraverserData next_data(data, _internal_root);
-  trav->traverse(next_data);
+  trav->traverse_down(data, _internal_root);
 
   // Do not directly render the nodes beneath this node.
   return false;

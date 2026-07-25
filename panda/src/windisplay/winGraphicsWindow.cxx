@@ -33,6 +33,10 @@
 #define WM_TOUCH 0x0240
 #endif
 
+#ifndef WM_MOUSEHWHEEL
+#define WM_MOUSEHWHEEL 0x020E
+#endif
+
 #if WINVER < 0x0601
 // Not used on Windows XP, but we still need to define it.
 #define TOUCH_COORD_TO_PIXEL(l) ((l) / 100)
@@ -85,13 +89,13 @@ static PFN_CLOSETOUCHINPUTHANDLE pCloseTouchInputHandle = 0;
  */
 WinGraphicsWindow::
 WinGraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
-                  const std::string &name,
+                  std::string name,
                   const FrameBufferProperties &fb_prop,
                   const WindowProperties &win_prop,
                   int flags,
                   GraphicsStateGuardian *gsg,
                   GraphicsOutput *host) :
-  GraphicsWindow(engine, pipe, name, fb_prop, win_prop, flags, gsg, host)
+  GraphicsWindow(engine, pipe, std::move(name), fb_prop, win_prop, flags, gsg, host)
 {
   initialize_input_devices();
   _hWnd = (HWND)0;
@@ -121,14 +125,14 @@ WinGraphicsWindow::
 }
 
 /**
- * Returns the MouseData associated with the nth input device's pointer.
+ * Returns the PointerData associated with the nth input device's pointer.
  */
-MouseData WinGraphicsWindow::
+PointerData WinGraphicsWindow::
 get_pointer(int device) const {
-  MouseData result;
+  PointerData result;
   {
     LightMutexHolder holder(_input_lock);
-    nassertr(device >= 0 && device < (int)_input_devices.size(), MouseData());
+    nassertr(device >= 0 && device < (int)_input_devices.size(), PointerData());
 
     result = ((const GraphicsWindowInputDevice *)_input_devices[device].p())->get_pointer();
 
@@ -215,21 +219,6 @@ close_ime() {
 }
 
 /**
- * This function will be called within the draw thread after end_frame() has
- * been called on all windows, to initiate the exchange of the front and back
- * buffers.
- *
- * This should instruct the window to prepare for the flip at the next video
- * sync, but it should not wait.
- *
- * We have the two separate functions, begin_flip() and end_flip(), to make it
- * easier to flip all of the windows at the same time.
- */
-void WinGraphicsWindow::
-begin_flip() {
-}
-
-/**
  * Do whatever processing is necessary to ensure that the window responds to
  * user events.  Also, honor any requests recently made via
  * request_properties()
@@ -283,6 +272,38 @@ process_events() {
  */
 void WinGraphicsWindow::
 set_properties_now(WindowProperties &properties) {
+  if (properties.has_fullscreen()) {
+    if (!properties.get_fullscreen() && is_fullscreen()) {
+      if (do_windowed_switch()) {
+        _properties.set_fullscreen(false);
+      } else {
+        windisplay_cat.warning()
+          << "Switching to windowed mode failed!\n";
+      }
+    }
+    else if (properties.get_fullscreen() && !is_fullscreen()) {
+      int x_size;
+      int y_size;
+      if (properties.has_size()) {
+        x_size = properties.get_x_size();
+        y_size = properties.get_y_size();
+      } else {
+        x_size = _properties.get_x_size();
+        y_size = _properties.get_y_size();
+      }
+      if (do_fullscreen_switch(x_size, y_size)) {
+        _properties.set_fullscreen(true);
+        _properties.set_size(x_size, y_size);
+        properties.clear_size();
+        properties.clear_origin();
+      } else {
+        windisplay_cat.warning()
+          << "Switching to fullscreen mode failed!\n";
+      }
+    }
+    properties.clear_fullscreen();
+  }
+
   GraphicsWindow::set_properties_now(properties);
   if (!properties.is_any_specified()) {
     // The base class has already handled this case.
@@ -437,14 +458,6 @@ set_properties_now(WindowProperties &properties) {
         windisplay_cat.warning()
           << "Switching to fullscreen mode failed!\n";
       }
-    } else if (!properties.get_fullscreen() && is_fullscreen()){
-      if (do_windowed_switch()){
-        _properties.set_fullscreen(false);
-        properties.clear_fullscreen();
-      } else {
-        windisplay_cat.warning()
-          << "Switching to windowed mode failed!\n";
-      }
     }
   }
 
@@ -463,7 +476,7 @@ set_properties_now(WindowProperties &properties) {
         if (!enable_raw_input()) {
           break;
         }
-        // Fall through
+        [[fallthrough]];
 
       case WindowProperties::M_confined:
         // If we are not the foreground window, we defer confining the cursor
@@ -665,18 +678,18 @@ initialize_input_devices() {
   _input = device;
 
   // Get the number of devices.
-  if (GetRawInputDeviceList(nullptr, &nInputDevices, sizeof(RAWINPUTDEVICELIST)) != 0) {
+  if ((int)GetRawInputDeviceList(nullptr, &nInputDevices, sizeof(RAWINPUTDEVICELIST)) != 0) {
     return;
   }
 
   // Allocate the array to hold the DeviceList
   pRawInputDeviceList = (PRAWINPUTDEVICELIST)alloca(sizeof(RAWINPUTDEVICELIST) * nInputDevices);
-  if (pRawInputDeviceList==0) {
+  if (pRawInputDeviceList == nullptr) {
     return;
   }
 
   // Fill the Array
-  if (GetRawInputDeviceList(pRawInputDeviceList, &nInputDevices, sizeof(RAWINPUTDEVICELIST)) == -1) {
+  if ((int)GetRawInputDeviceList(pRawInputDeviceList, &nInputDevices, sizeof(RAWINPUTDEVICELIST)) == -1) {
     return;
   }
 
@@ -685,13 +698,13 @@ initialize_input_devices() {
     if (pRawInputDeviceList[i].dwType == RIM_TYPEMOUSE) {
       // Fetch information about specified mouse device.
       UINT nSize;
-      if (GetRawInputDeviceInfoA(pRawInputDeviceList[i].hDevice, RIDI_DEVICENAME, (LPVOID)0, &nSize) != 0) {
-        return;
+      if ((int)GetRawInputDeviceInfoA(pRawInputDeviceList[i].hDevice, RIDI_DEVICENAME, (LPVOID)nullptr, &nSize) != 0) {
+        continue;
       }
       char *psName = (char*)alloca(sizeof(TCHAR) * nSize);
-      if (psName == 0) return;
-      if (GetRawInputDeviceInfoA(pRawInputDeviceList[i].hDevice, RIDI_DEVICENAME, (LPVOID)psName, &nSize) < 0) {
-        return;
+      if (psName == nullptr) continue;
+      if ((int)GetRawInputDeviceInfoA(pRawInputDeviceList[i].hDevice, RIDI_DEVICENAME, (LPVOID)psName, &nSize) < 0) {
+        continue;
       }
 
       // If it's not an RDP mouse, add it to the list of raw mice.
@@ -982,8 +995,8 @@ do_fullscreen_resize(int x_size, int y_size) {
  * Called in the set_properties_now function to switch to fullscreen.
  */
 bool WinGraphicsWindow::
-do_fullscreen_switch() {
-  if (!do_fullscreen_enable()) {
+do_fullscreen_switch(int x_size, int y_size) {
+  if (!do_fullscreen_enable(x_size, y_size)) {
     // Couldn't get fullscreen.
     return false;
   }
@@ -993,15 +1006,19 @@ do_fullscreen_switch() {
   DWORD window_style = make_style(props);
   SetWindowLong(_hWnd, GWL_STYLE, window_style);
 
-  WINDOW_METRICS metrics;
-  bool has_origin;
-  if (!calculate_metrics(true, window_style, metrics, has_origin)){
-    return false;
-  }
-
-  SetWindowPos(_hWnd, HWND_NOTOPMOST, 0, 0, metrics.width, metrics.height,
+  SetWindowPos(_hWnd, HWND_NOTOPMOST, 0, 0, x_size, y_size,
     SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+
+  set_size_and_recalc(x_size, y_size);
   return true;
+}
+
+/**
+ * Called in the set_properties_now function to switch to fullscreen.
+ */
+bool WinGraphicsWindow::
+do_fullscreen_switch() {
+  return do_fullscreen_switch(_properties.get_x_size(), _properties.get_y_size());
 }
 
 /**
@@ -1256,8 +1273,8 @@ open_graphic_window() {
   // somehow, but I need the window's black background to cover up the desktop
   // during the mode change.
 
-  if (fullscreen){
-    if (!do_fullscreen_enable()){
+  if (fullscreen) {
+    if (!do_fullscreen_enable()) {
       return false;
     }
   }
@@ -1270,7 +1287,7 @@ open_graphic_window() {
  * Not to confuse with do_fullscreen_switch().
  */
 bool WinGraphicsWindow::
-do_fullscreen_enable() {
+do_fullscreen_enable(int x_size, int y_size) {
 
   HWND hDesktopWindow = GetDesktopWindow();
   HDC scrnDC = GetDC(hDesktopWindow);
@@ -1280,8 +1297,8 @@ do_fullscreen_enable() {
   // GetDeviceCaps(scrnDC, VERTRES);
   ReleaseDC(hDesktopWindow, scrnDC);
 
-  DWORD dwWidth = _properties.get_x_size();
-  DWORD dwHeight = _properties.get_y_size();
+  DWORD dwWidth = x_size;
+  DWORD dwHeight = y_size;
   DWORD dwFullScreenBitDepth = cur_bitdepth;
 
   DEVMODE dm;
@@ -1309,12 +1326,16 @@ do_fullscreen_enable() {
   }
 
   _fullscreen_display_mode = dm;
-
-  _properties.set_origin(0, 0);
-  _properties.set_size(dwWidth, dwHeight);
-
   return true;
+}
 
+/**
+ * This is a low-level function that just puts Windows in fullscreen mode.
+ * Not to confuse with do_fullscreen_switch().
+ */
+bool WinGraphicsWindow::
+do_fullscreen_enable() {
+  return do_fullscreen_enable(_properties.get_x_size(), _properties.get_y_size());
 }
 
 /**
@@ -1347,6 +1368,11 @@ adjust_z_order() {
 void WinGraphicsWindow::
 adjust_z_order(WindowProperties::ZOrder last_z_order,
                WindowProperties::ZOrder this_z_order) {
+  // Prevent calling this recursively.
+  if (_in_adjust_z_order) {
+    return;
+  }
+
   HWND order;
   bool do_change = false;
 
@@ -1376,8 +1402,10 @@ adjust_z_order(WindowProperties::ZOrder last_z_order,
     break;
   }
   if (do_change) {
+    _in_adjust_z_order = true;
     BOOL result = SetWindowPos(_hWnd, order, 0,0,0,0,
                                SWP_NOMOVE | SWP_NOSENDCHANGING | SWP_NOSIZE);
+    _in_adjust_z_order = false;
     if (!result) {
       windisplay_cat.warning()
         << "SetWindowPos failed.\n";
@@ -1487,6 +1515,26 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
   WindowProperties properties;
 
   switch (msg) {
+  case WM_GETMINMAXINFO:
+  {
+    MINMAXINFO* minmaxinfo = (MINMAXINFO*)lparam;
+
+    int minClientWidth = 1;  // Minimum client area width
+    int minClientHeight = 1; // Minimum client area height
+
+    // Adjust window for non-client area
+    RECT rect = { 0, 0, minClientWidth, minClientHeight };
+    AdjustWindowRect(&rect, GetWindowLong(hwnd, GWL_STYLE), FALSE);
+
+    // Calculate final size
+    int minWidth = rect.right - rect.left;
+    int minHeight = rect.bottom - rect.top;
+
+    // Set the minimum track size in MINMAXINFO
+    minmaxinfo->ptMinTrackSize.x = minWidth;  // Minimum window width
+    minmaxinfo->ptMinTrackSize.y = minHeight; // Minimum window height
+  }
+  break;
   case WM_MOUSEMOVE:
     if (!_tracking_mouse_leaving) {
       // need to re-call TrackMouseEvent every time mouse re-enters window
@@ -1669,7 +1717,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_hWnd != nullptr) {
       handle_reshape();
     }
-    adjust_z_order();
+    if (!_in_adjust_z_order) {
+      adjust_z_order();
+    }
     return 0;
 
   case WM_PAINT:
@@ -1747,7 +1797,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    ReleaseCapture();
+    if (wparam == 0) {
+      ReleaseCapture();
+    }
     _input->button_up(MouseButton::button(0), get_message_time());
     return 0;
 
@@ -1755,7 +1807,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    ReleaseCapture();
+    if (wparam == 0) {
+      ReleaseCapture();
+    }
     _input->button_up(MouseButton::button(1), get_message_time());
     return 0;
 
@@ -1763,7 +1817,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     if (_lost_keypresses) {
       resend_lost_keypresses();
     }
-    ReleaseCapture();
+    if (wparam == 0) {
+      ReleaseCapture();
+    }
     _input->button_up(MouseButton::button(2), get_message_time());
     return 0;
 
@@ -1772,7 +1828,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
       if (_lost_keypresses) {
         resend_lost_keypresses();
       }
-      ReleaseCapture();
+      if (wparam == 0) {
+        ReleaseCapture();
+      }
       int whichButton = GET_XBUTTON_WPARAM(wparam);
       if (whichButton == XBUTTON1) {
         _input->button_up(MouseButton::button(3), get_message_time());
@@ -1808,6 +1866,31 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     }
     break;
 
+  case WM_MOUSEHWHEEL:
+    {
+      int delta = GET_WHEEL_DELTA_WPARAM(wparam);
+
+      POINT point;
+      GetCursorPos(&point);
+      ScreenToClient(hwnd, &point);
+      double time = get_message_time();
+
+      if (delta >= 0) {
+        while (delta > 0) {
+          handle_keypress(MouseButton::wheel_right(), point.x, point.y, time);
+          handle_keyrelease(MouseButton::wheel_right(), time);
+          delta -= WHEEL_DELTA;
+        }
+      } else {
+        while (delta < 0) {
+          handle_keypress(MouseButton::wheel_left(), point.x, point.y, time);
+          handle_keyrelease(MouseButton::wheel_left(), time);
+          delta += WHEEL_DELTA;
+        }
+      }
+      return 0;
+    }
+    break;
 
   case WM_IME_SETCONTEXT:
     if (!ime_hide)
@@ -1981,7 +2064,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     // the actual value passed to WM_CHAR seems to be poorly defined.  Now we
     // are using RegisterClassW etc., which means WM_CHAR is absolutely
     // supposed to be utf-16.
-    if (!_ime_open) {
+    if (!_ime_open || !ime_aware) {
       _input->keystroke(wparam);
     }
     break;
@@ -2066,11 +2149,12 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
                       get_message_time());
       handle_raw_keypress(lookup_raw_key(lparam), get_message_time());
 
-      // wparam does not contain leftright information for SHIFT, CONTROL, or
+      // wparam does not contain left/right information for SHIFT, CONTROL, or
       // ALT, so we have to track their status and do the right thing.  We'll
-      // send the leftright specific key event along with the general key
+      // send the left/right-specific key event along with the general key
       // event.
-      if (wparam == VK_SHIFT) {
+      switch (wparam) {
+      case VK_SHIFT:
         if ((GetKeyState(VK_LSHIFT) & 0x8000) != 0 && ! _lshift_down) {
           handle_keypress(KeyboardButton::lshift(), point.x, point.y,
                           get_message_time());
@@ -2081,7 +2165,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
                           get_message_time());
           _rshift_down = true;
         }
-      } else if(wparam == VK_CONTROL) {
+        break;
+
+      case VK_CONTROL:
         if ((GetKeyState(VK_LCONTROL) & 0x8000) != 0 && ! _lcontrol_down) {
           handle_keypress(KeyboardButton::lcontrol(), point.x, point.y,
                           get_message_time());
@@ -2092,6 +2178,15 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
                           get_message_time());
           _rcontrol_down = true;
         }
+        break;
+
+      case VK_LWIN:
+      case VK_RWIN:
+        // The opposite problem: there is no VK_WIN sent, so we explicitly have
+        // to send a generic meta() event.
+        handle_keypress(KeyboardButton::meta(), point.x, point.y,
+                        get_message_time());
+        break;
       }
 
       // Handle Cntrl-V paste from clipboard.  Is there a better way to detect
@@ -2109,7 +2204,7 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
             if (lptstr != nullptr)  {
               char *pChar;
               for (pChar = lptstr; *pChar; pChar++) {
-                _input->keystroke((uchar)*pChar);
+                _input->keystroke((unsigned char)*pChar);
               }
               GlobalUnlock(hglb);
             }
@@ -2191,10 +2286,11 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
     handle_keyrelease(lookup_key(wparam), get_message_time());
     handle_raw_keyrelease(lookup_raw_key(lparam), get_message_time());
 
-    // wparam does not contain leftright information for SHIFT, CONTROL, or
+    // wparam does not contain left/right information for SHIFT, CONTROL, or
     // ALT, so we have to track their status and do the right thing.  We'll
-    // send the leftright specific key event along with the general key event.
-    if (wparam == VK_SHIFT) {
+    // send the left/right specific key event along with the general key event.
+    switch (wparam) {
+    case VK_SHIFT:
       if ((GetKeyState(VK_LSHIFT) & 0x8000) == 0 && _lshift_down) {
         handle_keyrelease(KeyboardButton::lshift(), get_message_time());
         _lshift_down = false;
@@ -2203,7 +2299,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         handle_keyrelease(KeyboardButton::rshift(), get_message_time());
         _rshift_down = false;
       }
-    } else if(wparam == VK_CONTROL) {
+      break;
+
+    case VK_CONTROL:
       if ((GetKeyState(VK_LCONTROL) & 0x8000) == 0 && _lcontrol_down) {
         handle_keyrelease(KeyboardButton::lcontrol(), get_message_time());
         _lcontrol_down = false;
@@ -2212,7 +2310,9 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         handle_keyrelease(KeyboardButton::rcontrol(), get_message_time());
         _rcontrol_down = false;
       }
-    } else if(wparam == VK_MENU) {
+      break;
+
+    case VK_MENU:
       if ((GetKeyState(VK_LMENU) & 0x8000) == 0 && _lalt_down) {
         handle_keyrelease(KeyboardButton::lalt(), get_message_time());
         _lalt_down = false;
@@ -2221,6 +2321,14 @@ window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         handle_keyrelease(KeyboardButton::ralt(), get_message_time());
         _ralt_down = false;
       }
+      break;
+
+    case VK_LWIN:
+    case VK_RWIN:
+      // The opposite problem: there is no VK_WIN sent, so we explicitly have
+      // to send the generic meta() event here.
+      handle_keyrelease(KeyboardButton::meta(), get_message_time());
+      break;
     }
     break;
 
@@ -2651,6 +2759,10 @@ lookup_key(WPARAM wparam) const {
   case VK_LMENU: return KeyboardButton::lalt();
   case VK_RMENU: return KeyboardButton::ralt();
 
+  case VK_LWIN: return KeyboardButton::lmeta();
+  case VK_RWIN: return KeyboardButton::rmeta();
+  case VK_APPS: return KeyboardButton::menu();
+
   default:
     int key = MapVirtualKey(wparam, 2);
     if (isascii(key) && key != 0) {
@@ -2796,6 +2908,7 @@ lookup_raw_key(LPARAM lparam) const {
 
   // A few additional keys don't fit well in the above table.
   switch (vsc) {
+  case 86: return KeyboardButton::ascii_key('<'); // Between lshift and z
   case 87: return KeyboardButton::f11();
   case 88: return KeyboardButton::f12();
   default: return ButtonHandle::none();
@@ -2815,10 +2928,10 @@ get_keyboard_map() const {
 
   wchar_t text[256];
   UINT vsc = 0;
-  unsigned short ex_vsc[] = {0x57, 0x58,
+  unsigned short ex_vsc[] = {0x56, 0x57, 0x58,
     0x011c, 0x011d, 0x0135, 0x0137, 0x0138, 0x0145, 0x0147, 0x0148, 0x0149, 0x014b, 0x014d, 0x014f, 0x0150, 0x0151, 0x0152, 0x0153, 0x015b, 0x015c, 0x015d};
 
-  for (int k = 1; k < 84 + 17; ++k) {
+  for (int k = 1; k < 84 + sizeof(ex_vsc) / sizeof(short); ++k) {
     if (k >= 84) {
       vsc = ex_vsc[k - 84];
     } else {

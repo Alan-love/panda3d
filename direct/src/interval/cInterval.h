@@ -16,7 +16,7 @@
 
 #include "directbase.h"
 #include "typedReferenceCount.h"
-#include "pvector.h"
+#include "small_vector.h"
 #include "config_interval.h"
 #include "pStatCollector.h"
 #include "extension.h"
@@ -35,7 +35,7 @@ class CIntervalManager;
  */
 class EXPCL_DIRECT_INTERVAL CInterval : public TypedReferenceCount {
 public:
-  CInterval(const std::string &name, double duration, bool open_ended);
+  CInterval(std::string name, double duration, bool open_ended);
   virtual ~CInterval();
 
 PUBLISHED:
@@ -64,7 +64,7 @@ PUBLISHED:
   INLINE State get_state() const;
   INLINE bool is_stopped() const;
 
-  INLINE void set_done_event(const std::string &event);
+  INLINE void set_done_event(std::string event);
   INLINE const std::string &get_done_event() const;
 
   void set_t(double t);
@@ -178,7 +178,7 @@ private:
   // We keep a record of the "parent" intervals (that is, any CMetaInterval
   // objects that keep a pointer to this one) strictly so we can mark all of
   // our parents dirty when this interval gets dirty.
-  typedef pvector<CInterval *> Parents;
+  typedef small_vector<CInterval *> Parents;
   Parents _parents;
 
   static PStatCollector _root_pcollector;

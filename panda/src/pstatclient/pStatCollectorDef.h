@@ -29,11 +29,12 @@ class PStatClientVersion;
 class EXPCL_PANDA_PSTATCLIENT PStatCollectorDef {
 public:
   PStatCollectorDef();
-  PStatCollectorDef(int index, const std::string &name);
+  PStatCollectorDef(int index, std::string name);
   void set_parent(const PStatCollectorDef &parent);
 
   void write_datagram(Datagram &destination) const;
-  void read_datagram(DatagramIterator &source, PStatClientVersion *version);
+  void read_datagram(DatagramIterator &source,
+                     PStatClientVersion *version = nullptr);
 
   struct ColorDef {
     float r, g, b;

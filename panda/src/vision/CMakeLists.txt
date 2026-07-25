@@ -30,6 +30,11 @@ add_library(p3vision ${P3VISION_HEADERS} ${P3VISION_SOURCES})
 set_target_properties(p3vision PROPERTIES DEFINE_SYMBOL BUILDING_VISION)
 target_link_libraries(p3vision panda
   PKG::OPENCV PKG::ARTOOLKIT)
+
+if(WIN32)
+  # For the DirectShow webcam support in webcamVideoDS.cxx.
+  target_link_libraries(p3vision strmiids quartz odbc32 odbccp32)
+endif()
 set_target_properties(p3vision PROPERTIES CXX_EXCEPTIONS ON)
 target_interrogate(p3vision ALL)
 
@@ -41,6 +46,12 @@ endif()
 
 if(HAVE_FFMPEG)
   target_compile_definitions(p3vision PRIVATE HAVE_FFMPEG)
+endif()
+
+if(HAVE_ARTOOLKIT AND CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang)$")
+  # Do not re-export symbols from these libraries.
+  target_link_options(p3vision PRIVATE "LINKER:--exclude-libs,libAR.a")
+  target_link_options(p3vision PRIVATE "LINKER:--exclude-libs,libARMulti.a")
 endif()
 
 install(TARGETS p3vision

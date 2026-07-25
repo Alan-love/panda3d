@@ -24,7 +24,7 @@ class FactoryParams;
  * Specifies whether or how to enable antialiasing, if supported by the
  * backend renderer.
  */
-class EXPCL_PANDA_PGRAPH AntialiasAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH AntialiasAttrib final : public RenderAttrib {
 PUBLISHED:
   enum Mode {
     M_none        = 0x0000,
@@ -42,6 +42,7 @@ PUBLISHED:
   };
 
 private:
+  friend class StaticObject<AntialiasAttrib>;
   INLINE AntialiasAttrib(unsigned short mode);
 
 PUBLISHED:

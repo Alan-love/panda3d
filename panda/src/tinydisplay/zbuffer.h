@@ -158,6 +158,15 @@ struct ZTextureDef {
   PIXEL border_color;
 };
 
+struct ZBlend {
+  int op_rgb;
+  int op_alpha;
+  unsigned int xor_r;
+  unsigned int xor_g;
+  unsigned int xor_b;
+  unsigned int xor_a;
+};
+
 struct ZBuffer {
   int xsize,ysize;
   int linesize; /* line size, in bytes */
@@ -172,7 +181,8 @@ struct ZBuffer {
   int *ctable;
   ZTextureDef current_textures[MAX_TEXTURE_STAGES];
   int reference_alpha;
-  int blend_r, blend_g, blend_b, blend_a;
+  ZBlend blenda;
+  ZBlend blendb;
   ZB_storePixelFunc store_pix_func;
 };
 
@@ -252,7 +262,7 @@ int texcoord_mirror_once(int coord, int max_coord);
 /* linesize is in BYTES */
 void ZB_copyFrameBuffer(const ZBuffer *zb,void *buf,int linesize);
 void ZB_copyFrameBufferNoAlpha(const ZBuffer *zb,void *buf,int linesize);
-void ZB_zoomFrameBuffer(ZBuffer *dest, int dest_xmin, int dest_ymin, 
+void ZB_zoomFrameBuffer(ZBuffer *dest, int dest_xmin, int dest_ymin,
                         int dest_xsize, int dest_ysize,
                         const ZBuffer *source, int source_xmin, int source_ymin,
                         int source_xsize, int source_ysize);

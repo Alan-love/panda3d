@@ -38,7 +38,7 @@
 class EXPCL_PANDA_EXPRESS Datagram : public TypedObject {
 PUBLISHED:
   INLINE Datagram() = default;
-  INLINE Datagram(const void *data, size_t size);
+  INLINE explicit Datagram(const void *data, size_t size);
   INLINE explicit Datagram(vector_uchar data);
   Datagram(const Datagram &copy) = default;
   Datagram(Datagram &&from) noexcept = default;
@@ -75,11 +75,11 @@ PUBLISHED:
   INLINE void add_be_float32(PN_float32 value);
   INLINE void add_be_float64(PN_float64 value);
 
-  INLINE void add_string(const std::string &str);
-  INLINE void add_string32(const std::string &str);
-  INLINE void add_z_string(const std::string &str);
-  INLINE void add_fixed_string(const std::string &str, size_t size);
-  void add_wstring(const std::wstring &str);
+  INLINE void add_string(std::string_view str);
+  INLINE void add_string32(std::string_view str);
+  INLINE void add_z_string(std::string_view str);
+  INLINE void add_fixed_string(std::string_view str, size_t size);
+  void add_wstring(std::wstring_view str);
 
   INLINE void add_blob(const vector_uchar &);
   INLINE void add_blob32(const vector_uchar &);
@@ -95,9 +95,9 @@ public:
   INLINE const void *get_data() const;
 
 PUBLISHED:
-  EXTENSION(INLINE PyObject *get_message() const);
-  EXTENSION(INLINE PyObject *__bytes__() const);
-  EXTENSION(PyObject *__reduce__() const);
+  PY_EXTENSION(INLINE PyObject *get_message() const);
+  PY_EXTENSION(INLINE PyObject *__bytes__() const);
+  PY_EXTENSION(PyObject *__reduce__() const);
 
   INLINE size_t get_length() const;
 
@@ -121,9 +121,9 @@ private:
 
 #ifdef STDFLOAT_DOUBLE
   bool _stdfloat_double = true;
-#else
+#else // STDFLOAT_DOUBLE
   bool _stdfloat_double = false;
-#endif
+#endif // STDFLOAT_DOUBLE
 
 public:
 
@@ -159,13 +159,13 @@ generic_write_datagram(Datagram &dest, float value);
 INLINE void
 generic_write_datagram(Datagram &dest, double value);
 INLINE void
-generic_write_datagram(Datagram &dest, const std::string &value);
+generic_write_datagram(Datagram &dest, std::string_view value);
 INLINE void
-generic_write_datagram(Datagram &dest, const std::wstring &value);
+generic_write_datagram(Datagram &dest, std::wstring_view value);
 INLINE void
 generic_write_datagram(Datagram &dest, const vector_uchar &value);
 
 
 #include "datagram.I"
 
-#endif
+#endif // !DATAGRAM_H

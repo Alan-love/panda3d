@@ -28,8 +28,9 @@
  * ClipPlaneAttrib can either add planes or remove planes from the total set
  * of clipping planes in effect.
  */
-class EXPCL_PANDA_PGRAPH ClipPlaneAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH ClipPlaneAttrib final : public RenderAttrib {
 private:
+  friend class StaticObject<ClipPlaneAttrib>;
   INLINE ClipPlaneAttrib();
   INLINE ClipPlaneAttrib(const ClipPlaneAttrib &copy);
 
@@ -158,7 +159,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "ClipPlaneAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100, new ClipPlaneAttrib);
+    static StaticObject<ClipPlaneAttrib> default_attrib;
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

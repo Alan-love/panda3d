@@ -26,8 +26,8 @@ static const int LOW_PRIORITY_RANGE = 25;
  *
  */
 AdaptiveLru::
-AdaptiveLru(const std::string &name, size_t max_size) :
-  Namable(name)
+AdaptiveLru(std::string name, size_t max_size) :
+  Namable(std::move(name))
 {
   _total_size = 0;
   _max_size = max_size;
@@ -128,7 +128,6 @@ update_page(AdaptiveLruPage *page) {
           page->_average_frame_utilization *= 1.0f - _weight;
         }
 
-        target_priority = page->_priority;
         if (page->_average_frame_utilization >= 1.0f) {
           int integer_average_frame_utilization;
 
@@ -159,7 +158,7 @@ update_page(AdaptiveLruPage *page) {
   }
 
   if (target_priority != page->_priority) {
-    page->_priority = std::min(std::max(target_priority, 0), LPP_TotalPriorities - 1);
+    page->_priority = std::clamp(target_priority, 0, LPP_TotalPriorities - 1);
     ((AdaptiveLruPageDynamicList *)page)->remove_from_list();
     ((AdaptiveLruPageDynamicList *)page)->insert_before(&_page_array[page->_priority]);
   }

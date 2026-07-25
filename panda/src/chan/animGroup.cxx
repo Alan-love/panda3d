@@ -35,8 +35,8 @@ TypeHandle AnimGroup::_type_handle;
  * create an AnimBundle, and use that to create any subsequent children.
  */
 AnimGroup::
-AnimGroup(const string &name) :
-  Namable(name),
+AnimGroup(std::string name) :
+  Namable(std::move(name)),
   _children(get_class_type()),
   _root(nullptr)
 {
@@ -65,8 +65,8 @@ AnimGroup(AnimGroup *parent, const AnimGroup &copy) :
  * to delete it subsequently is to delete the entire hierarchy.
  */
 AnimGroup::
-AnimGroup(AnimGroup *parent, const string &name) :
-  Namable(name),
+AnimGroup(AnimGroup *parent, std::string name) :
+  Namable(std::move(name)),
   _children(get_class_type())
  {
   nassertv(parent != nullptr);
@@ -108,10 +108,8 @@ get_child(int n) const {
  * find_child().
  */
 AnimGroup *AnimGroup::
-get_child_named(const string &name) const {
-  Children::const_iterator ci;
-  for (ci = _children.begin(); ci != _children.end(); ++ci) {
-    AnimGroup *child = (*ci);
+get_child_named(std::string_view name) const {
+  for (AnimGroup *child : _children) {
     if (child->get_name() == name) {
       return child;
     }
@@ -126,10 +124,8 @@ get_child_named(const string &name) const {
  * this AnimGroup; see also get_child_named().
  */
 AnimGroup *AnimGroup::
-find_child(const string &name) const {
-  Children::const_iterator ci;
-  for (ci = _children.begin(); ci != _children.end(); ++ci) {
-    AnimGroup *child = (*ci);
+find_child(std::string_view name) const {
+  for (AnimGroup *child : _children) {
     if (child->get_name() == name) {
       return child;
     }
@@ -158,7 +154,7 @@ public:
  */
 void AnimGroup::
 sort_descendants() {
-  sort(_children.begin(), _children.end(), AnimGroupAlphabeticalOrder());
+  std::sort(_children.begin(), _children.end(), AnimGroupAlphabeticalOrder());
 
   Children::iterator ci;
   for (ci = _children.begin(); ci != _children.end(); ++ci) {
@@ -290,8 +286,8 @@ complete_pointers(TypedWritable **p_list, BamReader *) {
 /**
  * Factory method to generate a AnimGroup object
  */
-TypedWritable* AnimGroup::
-make_AnimGroup(const FactoryParams &params) {
+TypedWritable *AnimGroup::
+make_from_bam(const FactoryParams &params) {
   AnimGroup *me = new AnimGroup;
   DatagramIterator scan;
   BamReader *manager;
@@ -306,5 +302,5 @@ make_AnimGroup(const FactoryParams &params) {
  */
 void AnimGroup::
 register_with_read_factory() {
-  BamReader::get_factory()->register_factory(get_class_type(), make_AnimGroup);
+  BamReader::get_factory()->register_factory(get_class_type(), make_from_bam);
 }

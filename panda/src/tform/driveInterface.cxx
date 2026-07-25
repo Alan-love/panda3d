@@ -16,7 +16,7 @@
 
 #include "compose_matrix.h"
 #include "mouseAndKeyboard.h"
-#include "mouseData.h"
+#include "pointerData.h"
 #include "clockObject.h"
 #include "modifierButtons.h"
 #include "keyboardButton.h"
@@ -98,8 +98,8 @@ operator < (const DriveInterface::KeyHeld &other) const {
  *
  */
 DriveInterface::
-DriveInterface(const std::string &name) :
-  MouseInterfaceNode(name)
+DriveInterface(std::string name) :
+  MouseInterfaceNode(std::move(name))
 {
   _xy_input = define_input("xy", EventStoreVec2::get_class_type());
   _button_events_input = define_input("button_events", ButtonEventList::get_class_type());

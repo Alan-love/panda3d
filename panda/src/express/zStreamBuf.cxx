@@ -44,17 +44,10 @@ ZStreamBuf() {
   _dest = nullptr;
   _owns_dest = false;
 
-#ifdef PHAVE_IOSTREAM
   _buffer = (char *)PANDA_MALLOC_ARRAY(4096);
   char *ebuf = _buffer + 4096;
   setg(_buffer, ebuf, ebuf);
   setp(_buffer, ebuf);
-
-#else
-  allocate();
-  setg(base(), ebuf(), ebuf());
-  setp(base(), ebuf());
-#endif
 }
 
 /**
@@ -64,9 +57,7 @@ ZStreamBuf::
 ~ZStreamBuf() {
   close_read();
   close_write();
-#ifdef PHAVE_IOSTREAM
   PANDA_FREE_ARRAY(_buffer);
-#endif
 }
 
 /**
@@ -267,9 +258,9 @@ sync() {
     size_t n = pptr() - pbase();
     write_chars(pbase(), n, Z_SYNC_FLUSH);
     pbump(-(int)n);
+    _dest->flush();
   }
 
-  _dest->flush();
   return 0;
 }
 

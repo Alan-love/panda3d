@@ -41,13 +41,14 @@ TypeHandle PortalNode::_type_handle;
  * Then you can set the vertices yourself, with addVertex.
  */
 PortalNode::
-PortalNode(const std::string &name) :
-  PandaNode(name),
+PortalNode(std::string name) :
+  PandaNode(std::move(name)),
   _from_portal_mask(PortalMask::all_on()),
   _into_portal_mask(PortalMask::all_on()),
   _flags(0)
 {
   set_cull_callback();
+  set_renderable();
 
   _visible = false;
   _open = true;
@@ -60,8 +61,8 @@ PortalNode(const std::string &name) :
  * portal and setup from Python
  */
 PortalNode::
-PortalNode(const std::string &name, LPoint3 pos, PN_stdfloat scale) :
-  PandaNode(name),
+PortalNode(std::string name, LPoint3 pos, PN_stdfloat scale) :
+  PandaNode(std::move(name)),
   _from_portal_mask(PortalMask::all_on()),
   _into_portal_mask(PortalMask::all_on()),
   _flags(0)
@@ -308,18 +309,6 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
 }
 
 /**
- * Returns true if there is some value to visiting this particular node during
- * the cull traversal for any camera, false otherwise.  This will be used to
- * optimize the result of get_net_draw_show_mask(), so that any subtrees that
- * contain only nodes for which is_renderable() is false need not be visited.
- */
-bool PortalNode::
-is_renderable() const {
-  return true;
-}
-
-
-/**
  * Writes a brief description of the node to the indicated output stream.
  * This is invoked by the << operator.  It may be overridden in derived
  * classes to include some information relevant to the class.
@@ -359,7 +348,7 @@ compute_internal_bounds(CPT(BoundingVolume) &internal_bounds,
   // Now actually compute the bounding volume by putting it around all of our
   // vertices.
 
-  const LPoint3 *vertices_begin = &_vertices[0];
+  const LPoint3 *vertices_begin = _vertices.data();
   const LPoint3 *vertices_end = vertices_begin + _vertices.size();
 
   // Now actually compute the bounding volume by putting it around all

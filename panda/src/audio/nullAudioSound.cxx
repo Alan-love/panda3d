@@ -26,12 +26,16 @@ namespace {
 /**
  * All of these functions are just stubs.
  */
-NullAudioSound::NullAudioSound() {
+NullAudioSound::NullAudioSound() : AudioSound(false) {
   // Intentionally blank.
 }
 
 NullAudioSound::~NullAudioSound() {
   // Intentionally blank.
+}
+
+AudioSound *NullAudioSound::make_copy() const {
+  return new NullAudioSound();
 }
 
 void NullAudioSound::play() {
@@ -55,6 +59,14 @@ void NullAudioSound::set_loop_count(unsigned long) {
 }
 
 unsigned long NullAudioSound::get_loop_count() const {
+  return 0;
+}
+
+void NullAudioSound::set_loop_start(PN_stdfloat) {
+  // Intentionally blank.
+}
+
+PN_stdfloat NullAudioSound::get_loop_start() const {
   return 0;
 }
 
@@ -98,7 +110,7 @@ bool NullAudioSound::get_active() const {
   return false;
 }
 
-void NullAudioSound::set_finished_event(const string& event) {
+void NullAudioSound::set_finished_event(string event) {
   // Intentionally blank.
 }
 

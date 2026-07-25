@@ -16,7 +16,7 @@
 #include "dataGraphTraverser.h"
 #include "mouseWatcherParameter.h"
 #include "mouseAndKeyboard.h"
-#include "mouseData.h"
+#include "pointerData.h"
 #include "buttonEventList.h"
 #include "mouseButton.h"
 #include "throw_event.h"
@@ -43,8 +43,8 @@ TypeHandle MouseWatcher::_type_handle;
  *
  */
 MouseWatcher::
-MouseWatcher(const string &name) :
-  DataNode(name)
+MouseWatcher(std::string name) :
+  DataNode(std::move(name))
 {
   _pixel_xy_input = define_input("pixel_xy", EventStoreVec2::get_class_type());
   _pixel_size_input = define_input("pixel_size", EventStoreVec2::get_class_type());
@@ -575,7 +575,7 @@ get_over_regions(MouseWatcher::Regions &regions, const LPoint2 &pos) const {
   // Now sort the regions by pointer.  By convention, the Regions vectors are
   // always kept in order by pointer, so we can do easy linear comparison and
   // intersection operations.
-  sort(regions.begin(), regions.end());
+  std::sort(regions.begin(), regions.end());
 }
 
 /**
@@ -724,19 +724,14 @@ clear_current_regions() {
     while (old_ri != _current_regions.end()) {
       // Here's a region we don't have any more.
       MouseWatcherRegion *old_region = (*old_ri);
-      old_region->exit_region(param);
-      throw_event_pattern(_leave_pattern, old_region, ButtonHandle::none());
-      if (_preferred_region == old_region) {
-        _preferred_region = nullptr;
-      }
+      without_region(old_region, param);
       ++old_ri;
     }
 
     _current_regions.clear();
 
     if (_preferred_region != nullptr) {
-      _preferred_region->exit_region(param);
-      throw_event_pattern(_leave_pattern, _preferred_region, ButtonHandle::none());
+      exit_region(_preferred_region, param);
       _preferred_region = nullptr;
     }
   }
@@ -816,6 +811,18 @@ intersect_regions(MouseWatcher::Regions &only_a,
       ++b_ri;
     }
   }
+
+  // Add regions left over in regions_a.
+  while (a_ri != regions_a.end()) {
+    only_a.push_back(*a_ri);
+    ++a_ri;
+  }
+
+  // Add regions left over in regions_b.
+  while (b_ri != regions_b.end()) {
+    only_b.push_back(*b_ri);
+    ++b_ri;
+  }
 }
 
 /**
@@ -854,7 +861,7 @@ has_region_in(const MouseWatcher::Regions &regions,
  * pattern.
  */
 void MouseWatcher::
-throw_event_pattern(const string &pattern, const MouseWatcherRegion *region,
+throw_event_pattern(std::string_view pattern, const MouseWatcherRegion *region,
                     const ButtonHandle &button) {
   if (pattern.empty()) {
     return;
@@ -878,7 +885,7 @@ throw_event_pattern(const string &pattern, const MouseWatcherRegion *region,
   string event;
   for (size_t p = 0; p < pattern.size(); ++p) {
     if (pattern[p] == '%') {
-      string cmd = pattern.substr(p + 1, 1);
+      std::string_view cmd = pattern.substr(p + 1, 1);
       p++;
       if (cmd == "r") {
         if (region != nullptr) {
@@ -1387,7 +1394,7 @@ do_transmit_data(DataGraphTraverser *trav, const DataNodeTransmit &input,
           break;
         }
         // The button was already depressed, so this is really just keyrepeat.
-        // Fall through.
+        [[fallthrough]];
 
       case ButtonEvent::T_repeat:
         _current_buttons_down.set_bit(be._button.get_index());
@@ -1427,8 +1434,12 @@ do_transmit_data(DataGraphTraverser *trav, const DataNodeTransmit &input,
         break;
 
       case ButtonEvent::T_raw_down:
+        _current_raw_buttons_down.set_bit(be._button.get_index());
+        new_button_events.add_event(be);
+        break;
+
       case ButtonEvent::T_raw_up:
-        // These are passed through.
+        _current_raw_buttons_down.clear_bit(be._button.get_index());
         new_button_events.add_event(be);
         break;
       }

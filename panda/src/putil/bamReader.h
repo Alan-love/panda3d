@@ -124,16 +124,20 @@ PUBLISHED:
   bool init();
 
   class AuxData;
-  void set_aux_data(TypedWritable *obj, const std::string &name, AuxData *data);
-  AuxData *get_aux_data(TypedWritable *obj, const std::string &name) const;
+  void set_aux_data(TypedWritable *obj, std::string name, AuxData *data);
+  AuxData *get_aux_data(TypedWritable *obj, std::string_view name) const;
 
   INLINE const Filename &get_filename() const;
 
   INLINE const LoaderOptions &get_loader_options() const;
   INLINE void set_loader_options(const LoaderOptions &options);
 
+#if defined(CPPPARSER) && defined(HAVE_PYTHON)
+  EXTENSION(PyObject *read_object());
+#else
   BLOCKING TypedWritable *read_object();
   BLOCKING bool read_object(TypedWritable *&ptr, ReferenceCount *&ref_ptr);
+#endif
 
   INLINE bool is_eof() const;
   bool resolve();
@@ -148,14 +152,14 @@ PUBLISHED:
   INLINE int get_current_major_ver() const;
   INLINE int get_current_minor_ver() const;
 
-  EXTENSION(PyObject *get_file_version() const);
+  PY_EXTENSION(PyObject *get_file_version() const);
 
 PUBLISHED:
   MAKE_PROPERTY(source, get_source, set_source);
   MAKE_PROPERTY(filename, get_filename);
   MAKE_PROPERTY(loader_options, get_loader_options, set_loader_options);
 
-  MAKE_PROPERTY(file_version, get_file_version);
+  PY_MAKE_PROPERTY(file_version, get_file_version);
   MAKE_PROPERTY(file_endian, get_file_endian);
   MAKE_PROPERTY(file_stdfloat_double, get_file_stdfloat_double);
 
@@ -172,11 +176,11 @@ public:
   void read_cdata(DatagramIterator &scan, PipelineCyclerBase &cycler,
                   void *extra_data);
 
-  void set_int_tag(const std::string &tag, int value);
-  int get_int_tag(const std::string &tag) const;
+  void set_int_tag(std::string tag, int value);
+  int get_int_tag(std::string_view tag) const;
 
-  void set_aux_tag(const std::string &tag, BamReaderAuxData *value);
-  BamReaderAuxData *get_aux_tag(const std::string &tag) const;
+  void set_aux_tag(std::string tag, BamReaderAuxData *value);
+  BamReaderAuxData *get_aux_tag(std::string_view tag) const;
 
   void register_finalize(TypedWritable *whom);
 
@@ -202,7 +206,7 @@ public:
   INLINE static WritableFactory *get_factory();
 
 PUBLISHED:
-  EXTENSION(static void register_factory(TypeHandle handle, PyObject *func));
+  PY_EXTENSION(static void register_factory(TypeHandle handle, PyObject *func));
 
 private:
   INLINE static void create_factory();
@@ -221,7 +225,11 @@ private:
 
   INLINE bool get_datagram(Datagram &datagram);
 
+  void error_remaining_size(DatagramIterator &scan, size_t num_bytes);
+
 public:
+  INLINE bool expect_remaining_size(DatagramIterator &scan, size_t num_bytes);
+
   // Inherit from this class to piggyback additional temporary data on the
   // bamReader (via set_aux_data() and get_aux_data()) for any particular
   // objects during the bam reading process.
@@ -239,6 +247,8 @@ private:
 
   bool _long_object_id;
   bool _long_pta_id;
+
+  bool _has_error = false;
 
   // This maps the type index numbers encountered within the Bam file to
   // actual TypeHandles.
@@ -282,8 +292,8 @@ private:
   // which read_pointer() was called, so that we may call the appropriate
   // complete_pointers() later.
   typedef phash_map<PipelineCyclerBase *, vector_int, pointer_hash> CyclerPointers;
-  typedef pmap<std::string, int> IntTags;
-  typedef pmap<std::string, PT(BamReaderAuxData) > AuxTags;
+  typedef pmap<std::string, int, std::less<>> IntTags;
+  typedef pmap<std::string, PT(BamReaderAuxData), std::less<>> AuxTags;
   class PointerReference {
   public:
     vector_int _objects;
@@ -328,7 +338,7 @@ private:
   static NewTypes _new_types;
 
   // This is used in support of set_aux_data() and get_aux_data().
-  typedef pmap<std::string, PT(AuxData)> AuxDataNames;
+  typedef pmap<std::string, PT(AuxData), std::less<>> AuxDataNames;
   typedef phash_map<TypedWritable *, AuxDataNames, pointer_hash> AuxDataTable;
   AuxDataTable _aux_data;
 
@@ -350,4 +360,4 @@ parse_params(const FactoryParams &params,
 
 #include "bamReader.I"
 
-#endif
+#endif // !__BAM_READER_

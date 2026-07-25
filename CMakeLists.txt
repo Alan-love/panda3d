@@ -1,18 +1,6 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.13)
 set(CMAKE_DISABLE_SOURCE_CHANGES ON) # Must go before project() below
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON) # Must go before project() below
-
-if(CMAKE_VERSION VERSION_GREATER "3.11" OR POLICY CMP0072)
-  # Prefer GLVND over libGL when available; this will be enabled by default
-  # once the minimum CMake version is at least 3.11.
-  cmake_policy(SET CMP0072 NEW)
-endif()
-
-if(CMAKE_VERSION VERSION_GREATER "3.12" OR POLICY CMP0074)
-  # Needed for THIRDPARTY_DIRECTORY support; this will be enabled by default
-  # once the minimum CMake version is at least 3.12.
-  cmake_policy(SET CMP0074 NEW)
-endif()
 
 if(POLICY CMP0091)
   # Needed for CMake to pass /MD flag properly with non-VC generators.
@@ -20,17 +8,7 @@ if(POLICY CMP0091)
 endif()
 
 # Determine whether we are using a multi-config generator.
-if(CMAKE_VERSION VERSION_GREATER "3.8")
-  get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
-else()
-  message(WARNING "Multi-configuration builds may not work properly when using
-a CMake < 3.9. Making a guess if this is a multi-config generator.")
-  if(DEFINED CMAKE_CONFIGURATION_TYPES)
-    set(IS_MULTICONFIG ON)
-  else()
-    set(IS_MULTICONFIG OFF)
-  endif()
-endif()
+get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 
 # Set the default CMAKE_BUILD_TYPE before calling project().
 if(IS_MULTICONFIG)
@@ -46,7 +24,10 @@ endif()
 
 # Set defaults for macOS, must be before project().
 if(APPLE)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "Minimum macOS version to target")
+  # Needed for enable_language(OBJCXX)
+  cmake_minimum_required(VERSION 3.16)
+
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version to target")
   set(CMAKE_XCODE_ATTRIBUTE_CLANG_CXX_LIBRARY "libc++")
 
   if(CMAKE_VERSION VERSION_LESS "3.19" AND NOT CMAKE_OSX_SYSROOT)
@@ -68,9 +49,14 @@ project(Panda3D VERSION ${_version})
 unset(_version)
 unset(_s)
 
+if(APPLE)
+  # Allows separating out C++ flags from ObjC++ flags
+  enable_language(OBJCXX)
+endif()
+
 # Determine the possible build types.  Must be *after* calling project().
 set(_configs Standard Release RelWithDebInfo Debug MinSizeRel)
-if(CMAKE_CXX_COMPILER_ID MATCHES "(AppleClang|Clang|GCC)")
+if(CMAKE_CXX_COMPILER_ID MATCHES "(AppleClang|Clang|GNU)")
   list(APPEND _configs Coverage)
 endif()
 
@@ -89,11 +75,9 @@ string(REPLACE "$(EFFECTIVE_PLATFORM_NAME)" "" PANDA_CFG_INTDIR "${CMAKE_CFG_INT
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules/")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macros/")
 
-if(CMAKE_VERSION VERSION_GREATER "3.8")
-  # When using the Xcode generator, don't append the platform name to the
-  # intermediate configuration directory.
-  set_property(GLOBAL PROPERTY XCODE_EMIT_EFFECTIVE_PLATFORM_NAME OFF)
-endif()
+# When using the Xcode generator, don't append the platform name to the
+# intermediate configuration directory.
+set_property(GLOBAL PROPERTY XCODE_EMIT_EFFECTIVE_PLATFORM_NAME OFF)
 
 # Include modules builtin to CMake
 include(GNUInstallDirs)     # Defines CMAKE_INSTALL_<dir> variables
@@ -125,6 +109,8 @@ option(BUILD_DIRECT "Build the direct source tree." ON)
 option(BUILD_PANDATOOL "Build the pandatool source tree." ON)
 option(BUILD_CONTRIB "Build the contrib source tree." ON)
 option(BUILD_MODELS "Build/install the built-in models." ON)
+option(BUILD_TESTS "Build unit test runner." ON)
+option(BUILD_TOOLS "Build binary tools." ON)
 
 # Include Panda3D packages
 if(BUILD_DTOOL)
@@ -181,17 +167,8 @@ if(BUILD_MODELS)
     COMPONENT Models DESTINATION ${CMAKE_INSTALL_DATADIR}/panda3d)
 endif()
 
-if(INTERROGATE_PYTHON_INTERFACE)
-  # If we built the Python interface, run the test suite.  Note, we do NOT test
-  # for pytest before adding this test.  If the user doesn't have pytest, we'd
-  # like for the tests to fail.
-
-  # In the Coverage configuration, we also require pytest-cov
-
-  add_test(NAME pytest
-    COMMAND "${PYTHON_EXECUTABLE}" -m pytest "${PROJECT_SOURCE_DIR}/tests"
-    $<$<CONFIG:Coverage>:--cov=.>
-    WORKING_DIRECTORY "${PANDA_OUTPUT_DIR}")
+if(BUILD_TESTS)
+  add_subdirectory(tests "${CMAKE_BINARY_DIR}/tests")
 endif()
 
 # Generate the Panda3DConfig.cmake file so find_package(Panda3D) works, and

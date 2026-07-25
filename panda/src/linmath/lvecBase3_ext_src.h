@@ -11,6 +11,8 @@
  * @date 2013-09-13
  */
 
+#ifdef HAVE_PYTHON
+
 /**
  * This class defines the extension methods for LVecBase3, which are called
  * instead of any C++ methods with the same prototype.
@@ -34,6 +36,10 @@ public:
   INLINE_LINMATH PyObject *__round__(PyObject *self) const;
   INLINE_LINMATH PyObject *__floor__(PyObject *self) const;
   INLINE_LINMATH PyObject *__ceil__(PyObject *self) const;
+
+  INLINE_LINMATH int __getbuffer__(PyObject *self, Py_buffer *view, int flags) const;
 };
 
 #include "lvecBase3_ext_src.I"
+
+#endif

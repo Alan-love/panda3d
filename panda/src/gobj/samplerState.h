@@ -17,12 +17,11 @@
 #include "pandabase.h"
 
 #include "typedObject.h"
-#include "namable.h"
 #include "luse.h"
+#include "memoryBase.h"
 #include "numeric_types.h"
-#include "bamReader.h"
 #include "config_gobj.h"
-
+class BamReader;
 class FactoryParams;
 class GraphicsStateGuardianBase;
 class PreparedGraphicsObjects;
@@ -33,7 +32,7 @@ class SamplerContext;
  * can be used to sample the same texture using different settings in
  * different places.
  */
-class EXPCL_PANDA_GOBJ SamplerState {
+class EXPCL_PANDA_GOBJ SamplerState : public MemoryBase {
 PUBLISHED:
   enum FilterType {
     // Mag Filter and Min Filter
@@ -127,10 +126,10 @@ PUBLISHED:
   INLINE static bool is_mipmap(FilterType type);
 
   static std::string format_filter_type(FilterType ft);
-  static FilterType string_filter_type(const std::string &str);
+  static FilterType string_filter_type(std::string_view str);
 
   static std::string format_wrap_mode(WrapMode wm);
-  static WrapMode string_wrap_mode(const std::string &str);
+  static WrapMode string_wrap_mode(std::string_view str);
 
   INLINE bool operator == (const SamplerState &other) const;
   INLINE bool operator != (const SamplerState &other) const;

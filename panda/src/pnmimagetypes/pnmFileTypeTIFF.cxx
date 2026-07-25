@@ -277,7 +277,7 @@ has_magic_number() const {
  * otherwise.
  */
 bool PNMFileTypeTIFF::
-matches_magic_number(const string &magic_number) const {
+matches_magic_number(std::string_view magic_number) const {
   nassertr(magic_number.size() >= 2, false);
   int mn =
     ((unsigned char)magic_number[0] << 8) |
@@ -291,9 +291,9 @@ matches_magic_number(const string &magic_number) const {
  * returns NULL.
  */
 PNMReader *PNMFileTypeTIFF::
-make_reader(istream *file, bool owns_file, const string &magic_number) {
+make_reader(istream *file, bool owns_file, std::string_view magic_number) {
   install_error_handlers();
-  return new Reader(this, file, owns_file, magic_number);
+  return new Reader(this, file, owns_file, std::string(magic_number));
 }
 
 /**
@@ -1074,7 +1074,7 @@ write_data(xel *array, xelval *alpha) {
     break;
   }
 
-  buf = (unsigned char*) malloc( bytesperrow );
+  buf = (unsigned char*) alloca( bytesperrow );
   if ( buf == nullptr ) {
     pnmimage_tiff_cat.error()
       << "Can't allocate memory for row buffer\n";
@@ -1145,6 +1145,9 @@ write_data(xel *array, xelval *alpha) {
             pnmimage_tiff_cat.error()
               << "Internal error: color not found?!?  row=" << row
               << " col=" << col << "\n";
+            if (cht != nullptr) {
+              ppm_freecolorhash(cht);
+            }
             return 0;
           }
           *tP++ = (unsigned char) s;
@@ -1187,6 +1190,10 @@ write_data(xel *array, xelval *alpha) {
   }
   TIFFFlushData( tif );
   TIFFClose( tif );
+
+  if (cht != nullptr) {
+    ppm_freecolorhash(cht);
+  }
 
   return _y_size;
 }
@@ -1242,7 +1249,7 @@ tiff_error(const char *module, const char *format, va_list ap) {
 void PNMFileTypeTIFF::
 register_with_read_factory() {
   BamReader::get_factory()->
-    register_factory(get_class_type(), make_PNMFileTypeTIFF);
+    register_factory(get_class_type(), make_from_bam);
 }
 
 /**
@@ -1254,7 +1261,7 @@ register_with_read_factory() {
  * we just pull the object from the registry.
  */
 TypedWritable *PNMFileTypeTIFF::
-make_PNMFileTypeTIFF(const FactoryParams &params) {
+make_from_bam(const FactoryParams &params) {
   return PNMFileTypeRegistry::get_global_ptr()->get_type_by_handle(get_class_type());
 }
 

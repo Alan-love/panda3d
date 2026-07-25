@@ -14,8 +14,10 @@
 
 // Panda Headers
 #include "throw_event.h"
+#include "coordinateSystem.h"
 #include "openalAudioSound.h"
 #include "openalAudioManager.h"
+#include "vector_string.h"
 
 TypeHandle OpenALAudioSound::_type_handle;
 
@@ -33,10 +35,11 @@ TypeHandle OpenALAudioSound::_type_handle;
  */
 
 OpenALAudioSound::
-OpenALAudioSound(OpenALAudioManager* manager,
+OpenALAudioSound(OpenALAudioManager *manager,
                  MovieAudio *movie,
                  bool positional,
                  int mode) :
+  AudioSound(positional),
   _movie(movie),
   _sd(nullptr),
   _playing_loops(0),
@@ -47,18 +50,21 @@ OpenALAudioSound(OpenALAudioManager* manager,
   _volume(1.0f),
   _balance(0),
   _play_rate(1.0),
-  _positional(positional),
   _min_dist(1.0f),
   _max_dist(1000000000.0f),
   _drop_off_factor(1.0f),
   _length(0.0),
   _loop_count(1),
+  _loop_start(0),
   _desired_mode(mode),
   _start_time(0.0),
   _current_time(0.0),
   _basename(movie->get_filename().get_basename()),
   _active(manager->get_active()),
-  _paused(false)
+  _paused(false),
+  _cone_inner_angle(360.0f),
+  _cone_outer_angle(360.0f),
+  _cone_outer_gain(0.0f)
 {
   _location[0] = 0.0f;
   _location[1] = 0.0f;
@@ -66,6 +72,9 @@ OpenALAudioSound(OpenALAudioManager* manager,
   _velocity[0] = 0.0f;
   _velocity[1] = 0.0f;
   _velocity[2] = 0.0f;
+  _direction[0] = 0.0f;
+  _direction[1] = 0.0f;
+  _direction[2] = 0.0f;
 
   ReMutexHolder holder(OpenALAudioManager::_lock);
 
@@ -80,6 +89,67 @@ OpenALAudioSound(OpenALAudioManager* manager,
       audio_warning("stereo sound " << movie->get_filename() << " will not be spatialized");
     }
   }
+
+  _comment = std::move(_sd->_comment);
+  release_sound_data(false);
+}
+
+/**
+ * Copy constructor (to be used with make_copy).
+ */
+OpenALAudioSound::
+OpenALAudioSound(const OpenALAudioSound &copy_sound) :
+  AudioSound(copy_sound.is_positional()),
+  _movie(copy_sound._movie),
+  _sd(copy_sound._sd),
+  _playing_loops(copy_sound._playing_loops),
+  _playing_rate(copy_sound._playing_rate),
+  _loops_completed(copy_sound._loops_completed),
+  _source(copy_sound._source),
+  _manager(copy_sound._manager),
+  _volume(copy_sound._volume),
+  _balance(copy_sound._balance),
+  _play_rate(copy_sound._play_rate),
+  _min_dist(copy_sound._min_dist),
+  _max_dist(copy_sound._max_dist),
+  _drop_off_factor(copy_sound._drop_off_factor),
+  _length(copy_sound._length),
+  _loop_count(copy_sound._loop_count),
+  _loop_start(copy_sound._loop_start),
+  _desired_mode(copy_sound._desired_mode),
+  _start_time(copy_sound._start_time),
+  _current_time(0.0),
+  _basename(copy_sound._basename),
+  _active(copy_sound._active),
+  _paused(copy_sound._paused),
+  _cone_inner_angle(copy_sound._cone_inner_angle),
+  _cone_outer_angle(copy_sound._cone_outer_angle),
+  _cone_outer_gain(copy_sound._cone_outer_gain)
+{
+  _location[0] = copy_sound._location[0];
+  _location[1] = copy_sound._location[1];
+  _location[2] = copy_sound._location[2];
+  _velocity[0] = copy_sound._velocity[0];
+  _velocity[1] = copy_sound._velocity[1];
+  _velocity[2] = copy_sound._velocity[2];
+  _direction[0] = copy_sound._direction[0];
+  _direction[1] = copy_sound._direction[1];
+  _direction[2] = copy_sound._direction[2];
+
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+
+  if (!require_sound_data()) {
+    cleanup();
+    return;
+  }
+
+  if (copy_sound.is_positional()) {
+    if (_sd->_channels != 1) {
+      audio_warning("copied stereo sound " << _movie->get_filename() << " will not be spatialized");
+    }
+  }
+
+  _comment = std::move(_sd->_comment);
   release_sound_data(false);
 }
 
@@ -113,6 +183,20 @@ cleanup() {
 }
 
 /**
+ * Copies an OpenALAudioSound into a new OpenALAudioSound.
+ */
+AudioSound *OpenALAudioSound::
+make_copy() const {
+  OpenALAudioSound *copy_sound = new OpenALAudioSound(*this);
+
+  // throw errors if the copied-to node doesn't match the copied-from
+  nassertr(copy_sound->is_valid() == this->is_valid(), nullptr);
+  nassertr(copy_sound->has_sound_data() == this->has_sound_data(), nullptr);
+
+  return copy_sound;
+}
+
+/**
  * Plays a sound.
  */
 void OpenALAudioSound::
@@ -121,7 +205,7 @@ play() {
 
   if (!is_valid()) return;
 
-  PN_stdfloat px,py,pz,vx,vy,vz;
+  PN_stdfloat px, py, pz, vx, vy, vz;
 
   if (!_active) {
     _paused = true;
@@ -156,8 +240,9 @@ play() {
   set_3d_min_distance(_min_dist);
   set_3d_max_distance(_max_dist);
   set_3d_drop_off_factor(_drop_off_factor);
-  get_3d_attributes(&px,&py,&pz,&vx,&vy,&vz);
+  get_3d_attributes(&px, &py, &pz, &vx, &vy, &vz);
   set_3d_attributes(px, py, pz, vx, vy, vz);
+  set_3d_direction(get_3d_direction());
 
   _playing_loops = _loop_count;
   if (_playing_loops == 0) {
@@ -172,9 +257,20 @@ play() {
 
   if (_sd->_sample) {
     push_fresh_buffers();
+    // The macOS implementation of alSourcePlay resets the offset, so we call
+    // it before and avoid calling restart_stalled_audio() afterwards (#1607)
+#ifdef HAVE_OPENAL_FRAMEWORK
+    ALenum status;
+    alGetSourcei(_source, AL_SOURCE_STATE, &status);
+    if (status != AL_PLAYING) {
+      alSourcePlay(_source);
+    }
+#endif
     alSourcef(_source, AL_SEC_OFFSET, _start_time);
     _stream_queued[0]._time_offset = _start_time;
+#ifndef HAVE_OPENAL_FRAMEWORK
     restart_stalled_audio();
+#endif
   } else {
     audio_debug("Play: stream tell = " << _sd->_stream->tell() << " seeking " << _start_time);
     if (_sd->_stream->tell() != _start_time) {
@@ -277,6 +373,36 @@ set_loop_count(unsigned long loop_count) {
 unsigned long OpenALAudioSound::
 get_loop_count() const {
   return _loop_count;
+}
+
+/**
+ * Sets the time at which subsequent loops will begin.
+ * A value of 0 indicates the beginning of the audio.
+ */
+void OpenALAudioSound::
+set_loop_start(PN_stdfloat loop_start) {
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+
+  if (!is_valid()) {
+    return;
+  }
+
+  if (loop_start >= _length) {
+    // This loop would begin after the song ends.
+    // Not a good idea.
+    loop_start = 0;
+  }
+
+  _loop_start = loop_start;
+}
+
+/**
+ * Return the time at which subsequent loops will begin.
+ * A value of 0 indicates the beginning of the audio.
+ */
+PN_stdfloat OpenALAudioSound::
+get_loop_start() const {
+  return _loop_start;
 }
 
 /**
@@ -389,7 +515,7 @@ read_stream_data(int bytelen, unsigned char *buffer) {
     int samples = (int)(remain * rate);
     if (samples <= 0) {
       _loops_completed += 1;
-      cursor->seek(0.0);
+      cursor->seek(_loop_start);
       continue;
     }
     if (_sd->_stream->ready() == 0) {
@@ -411,7 +537,7 @@ read_stream_data(int bytelen, unsigned char *buffer) {
     }
     if (samples == 0) {
       _loops_completed += 1;
-      cursor->seek(0.0);
+      cursor->seek(_loop_start);
       if (_playing_loops >= 1000000000) {
         // Prevent infinite loop if endlessly looping empty sound
         return fill;
@@ -459,7 +585,7 @@ correct_calibrated_clock(double rtc, double t) {
     }
     set_calibrated_clock(rtc, cc, scale);
   }
-  cc = (rtc - _calibrated_clock_base) * _calibrated_clock_scale;
+  //cc = (rtc - _calibrated_clock_base) * _calibrated_clock_scale;
 }
 
 /**
@@ -498,7 +624,7 @@ pull_used_buffers() {
           }
         }
         if (!found_culprit) {
-          audio_error("corruption in stream queue");
+          audio_error(get_name() << ": corruption in stream queue");
           cleanup();
           return;
         }
@@ -535,7 +661,7 @@ push_fresh_buffers() {
   if (_sd->_sample) {
     while ((_loops_completed < _playing_loops) &&
            (_stream_queued.size() < 100)) {
-      queue_buffer(_sd->_sample, 0,_loops_completed, 0.0);
+      queue_buffer(_sd->_sample, 0,_loops_completed, _loop_start);
       _loops_completed += 1;
     }
   } else {
@@ -696,13 +822,53 @@ length() const {
 void OpenALAudioSound::
 set_3d_attributes(PN_stdfloat px, PN_stdfloat py, PN_stdfloat pz, PN_stdfloat vx, PN_stdfloat vy, PN_stdfloat vz) {
   ReMutexHolder holder(OpenALAudioManager::_lock);
-  _location[0] = px;
-  _location[1] = pz;
-  _location[2] = -py;
+  CoordinateSystem cs = get_default_coordinate_system();
 
-  _velocity[0] = vx;
-  _velocity[1] = vz;
-  _velocity[2] = -vy;
+  switch (cs) {
+  case CS_yup_right:
+    _location[0] = px;
+    _location[1] = py;
+    _location[2] = pz;
+
+    _velocity[0] = vx;
+    _velocity[1] = vy;
+    _velocity[2] = vz;
+    break;
+
+  case CS_zup_right:
+    _location[0] = px;
+    _location[1] = pz;
+    _location[2] = -py;
+
+    _velocity[0] = vx;
+    _velocity[1] = vz;
+    _velocity[2] = -vy;
+    break;
+
+  case CS_yup_left:
+    _location[0] = px;
+    _location[1] = py;
+    _location[2] = -pz;
+
+    _velocity[0] = vx;
+    _velocity[1] = vy;
+    _velocity[2] = -vz;
+    break;
+
+  case CS_zup_left:
+    _location[0] = px;
+    _location[1] = pz;
+    _location[2] = py;
+
+    _velocity[0] = vx;
+    _velocity[1] = vz;
+    _velocity[2] = vy;
+    break;
+
+  default:
+    nassert_raise("invalid coordinate system");
+    return;
+  }
 
   if (is_playing()) {
     _manager->make_current();
@@ -729,6 +895,41 @@ get_3d_attributes(PN_stdfloat *px, PN_stdfloat *py, PN_stdfloat *pz, PN_stdfloat
   *vx = _velocity[0];
   *vy = -_velocity[2];
   *vz = _velocity[1];
+}
+
+/**
+* Set the direction of this sound
+*
+* Both Panda3D and OpenAL use a right handed coordinate system.  However, in
+* Panda3D the Y-Axis is going into the Screen and the Z-Axis is going up.  In
+* OpenAL the Y-Axis is going up and the Z-Axis is coming out of the screen.
+*
+* The solution is simple, we just flip the Y and Z axis and negate the Z, as
+* we move coordinates from Panda to OpenAL and back.
+*/
+void OpenALAudioSound::
+set_3d_direction(LVector3 d) {
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+  _direction[0] = d.get_x();
+  _direction[1] = d.get_z();
+  _direction[2] = -d.get_y();
+
+  if (is_playing()) {
+    _manager->make_current();
+
+    alGetError(); // clear errors
+    alSourcefv(_source, AL_DIRECTION, _direction);
+    al_audio_errcheck("alSourcefv(_source,AL_DIRECTION)");
+  }
+}
+
+/**
+ * Get the direction of this sound.
+ */
+LVector3 OpenALAudioSound::
+get_3d_direction() const {
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+  return LVector3(_direction[0], -_direction[2], _direction[1]);
 }
 
 /**
@@ -808,6 +1009,81 @@ get_3d_drop_off_factor() const {
 }
 
 /**
+ * Set the inner angle of a directional sound
+ */
+void OpenALAudioSound::
+set_3d_cone_inner_angle(PN_stdfloat angle) {
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+  _cone_inner_angle = angle;
+
+  if (is_playing()) {
+    _manager->make_current();
+
+    alGetError(); // clear errors
+    alSourcef(_source, AL_CONE_INNER_ANGLE, _cone_inner_angle);
+    al_audio_errcheck("alSourcefv(_source,AL_CONE_INNER_ANGLE)");
+  }
+}
+
+/**
+ * Get the inner angle of a directional sound
+ */
+PN_stdfloat OpenALAudioSound::
+get_3d_cone_inner_angle() const {
+  return _cone_inner_angle;
+}
+
+/**
+ * Set the outer angle of a directional sound
+ */
+void OpenALAudioSound::
+set_3d_cone_outer_angle(PN_stdfloat angle) {
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+  _cone_outer_angle = angle;
+
+  if (is_playing()) {
+    _manager->make_current();
+
+    alGetError(); // clear errors
+    alSourcef(_source, AL_CONE_OUTER_ANGLE, _cone_outer_angle);
+    al_audio_errcheck("alSourcefv(_source,AL_CONE_OUTER_ANGLE)");
+  }
+}
+
+/**
+ * Get the outer angle of a directional sound
+ */
+PN_stdfloat OpenALAudioSound::
+get_3d_cone_outer_angle() const {
+  return _cone_outer_angle;
+}
+
+/**
+ * Set the outer gain factor of a directional sound
+ */
+void OpenALAudioSound::
+set_3d_cone_outer_gain(PN_stdfloat gain) {
+  ReMutexHolder holder(OpenALAudioManager::_lock);
+  _cone_outer_gain = gain;
+
+  if (is_playing()) {
+    _manager->make_current();
+
+    alGetError(); // clear errors
+    alSourcef(_source, AL_CONE_OUTER_GAIN, _cone_outer_gain);
+    al_audio_errcheck("alSourcefv(_source,AL_CONE_OUTER_GAIN)");
+  }
+}
+
+/**
+ * Get the outer gain of a directional sound
+ */
+PN_stdfloat OpenALAudioSound::
+get_3d_cone_outer_gain() const {
+  return _cone_outer_gain;
+}
+
+/**
  * Sets whether the sound is marked "active".  By default, the active flag is
  * true for all sounds.  If the active flag is set to false for any particular
  * sound, the sound will not be heard.
@@ -855,8 +1131,8 @@ get_active() const {
  *
  */
 void OpenALAudioSound::
-set_finished_event(const std::string& event) {
-  _finished_event = event;
+set_finished_event(std::string event) {
+  _finished_event = std::move(event);
 }
 
 /**
@@ -891,4 +1167,12 @@ status() const {
   } else {
     return AudioSound::PLAYING;
   }
+}
+
+/**
+ * Returns the comments attached to this audio file.
+ */
+const vector_string& OpenALAudioSound::
+get_raw_comment() const {
+  return _comment;
 }

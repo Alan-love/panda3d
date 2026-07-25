@@ -459,7 +459,7 @@ append_cv_impl(const LVecBase4 &v) {
  * Returns true on success, false on failure.
  */
 bool NurbsCurve::
-format_egg(std::ostream &out, const std::string &name, const std::string &curve_type,
+format_egg(std::ostream &out, std::string_view name, std::string_view curve_type,
            int indent_level) const {
   return NurbsCurveInterface::format_egg(out, name, curve_type, indent_level);
 }
@@ -485,14 +485,14 @@ find_cv(PN_stdfloat t) {
  */
 void NurbsCurve::
 register_with_read_factory() {
-  BamReader::get_factory()->register_factory(get_class_type(), make_NurbsCurve);
+  BamReader::get_factory()->register_factory(get_class_type(), make_from_bam);
 }
 
 /**
  * Factory method to generate an object of this type.
  */
 TypedWritable *NurbsCurve::
-make_NurbsCurve(const FactoryParams &params) {
+make_from_bam(const FactoryParams &params) {
   NurbsCurve *me = new NurbsCurve;
   DatagramIterator scan;
   BamReader *manager;

@@ -23,13 +23,15 @@
  */
 class EXPCL_DTOOL_PRC ConfigVariableDouble : public ConfigVariable {
 PUBLISHED:
-  INLINE ConfigVariableDouble(const std::string &name);
-  INLINE ConfigVariableDouble(const std::string &name, double default_value,
-                              const std::string &description = std::string(),
-                              int flags = 0);
-  INLINE ConfigVariableDouble(const std::string &name, const std::string &default_value,
-                              const std::string &description = std::string(),
-                              int flags = 0);
+  INLINE explicit ConfigVariableDouble(std::string_view name);
+  INLINE explicit ConfigVariableDouble(std::string_view name,
+                                       double default_value,
+                                       std::string_view description = std::string_view(),
+                                       int flags = 0);
+  INLINE explicit ConfigVariableDouble(std::string_view name,
+                                       std::string_view default_value,
+                                       std::string_view description = std::string_view(),
+                                       int flags = 0);
 
   INLINE void operator = (double value);
   INLINE operator double () const;
@@ -52,7 +54,7 @@ private:
   void set_default_value(double default_value);
 
 private:
-  AtomicAdjust::Integer _local_modified;
+  Modified _local_modified;
   double _cache;
 };
 

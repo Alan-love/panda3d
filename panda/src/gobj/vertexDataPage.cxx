@@ -919,8 +919,8 @@ stop_threads() {
  *
  */
 VertexDataPage::PageThread::
-PageThread(PageThreadManager *manager, const std::string &name) :
-  Thread(name, name),
+PageThread(PageThreadManager *manager, std::string_view name) :
+  Thread(std::string(name), std::string(name)),
   _manager(manager),
   _working_cvar(_tlock)
 {
@@ -934,7 +934,7 @@ thread_main() {
   _tlock.acquire();
 
   while (true) {
-    PStatClient::thread_tick(get_sync_name());
+    PStatClient::thread_tick();
 
     while (_manager->_pending_reads.empty() &&
            _manager->_pending_writes.empty()) {

@@ -26,7 +26,7 @@
  */
 class EXPCL_PANDA_PGRAPHNODES SequenceNode : public SelectiveChildNode, public AnimInterface {
 PUBLISHED:
-  INLINE explicit SequenceNode(const std::string &name);
+  INLINE explicit SequenceNode(std::string name);
 
 protected:
   SequenceNode(const SequenceNode &copy);
@@ -43,7 +43,6 @@ public:
   virtual bool safe_to_combine_children() const;
 
   virtual bool cull_callback(CullTraverser *trav, CullTraverserData &data);
-  virtual int get_first_visible_child() const;
   virtual bool has_single_child_visibility() const;
   virtual int get_visible_child() const;
 

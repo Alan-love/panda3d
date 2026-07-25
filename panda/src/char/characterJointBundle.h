@@ -30,7 +30,7 @@ protected:
   INLINE CharacterJointBundle(const CharacterJointBundle &copy);
 
 PUBLISHED:
-  explicit CharacterJointBundle(const std::string &name = "");
+  explicit CharacterJointBundle(std::string name = "");
   virtual ~CharacterJointBundle();
 
 PUBLISHED:
@@ -47,7 +47,7 @@ private:
 public:
   static void register_with_read_factory();
 
-  static TypedWritable *make_CharacterJointBundle(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 public:
   virtual TypeHandle get_type() const {

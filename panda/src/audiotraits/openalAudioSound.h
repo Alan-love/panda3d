@@ -19,6 +19,7 @@
 #include "movieAudioCursor.h"
 #include "trueClock.h"
 #include "openalAudioManager.h"
+#include "vector_string.h"
 
 // OSX uses the OpenAL framework
 #ifdef HAVE_OPENAL_FRAMEWORK
@@ -27,9 +28,10 @@
 #else
   #include <AL/al.h>
   #include <AL/alc.h>
+  #include <AL/alext.h>
 #endif
 
-class EXPCL_OPENAL_AUDIO OpenALAudioSound : public AudioSound {
+class EXPCL_OPENAL_AUDIO OpenALAudioSound final : public AudioSound {
   friend class OpenALAudioManager;
 
 public:
@@ -49,6 +51,10 @@ public:
   // loop_count: 0 = forever; 1 = play once; n = play n times.  inits to 1.
   void set_loop_count(unsigned long loop_count=1);
   unsigned long get_loop_count() const;
+
+  // loop_start: 0 = beginning.  expressed in seconds.  inits to 0.
+  void set_loop_start(PN_stdfloat loop_start=0);
+  PN_stdfloat get_loop_start() const;
 
   // 0 = beginning; length() = end.  inits to 0.0.
   void set_time(PN_stdfloat time=0.0);
@@ -72,7 +78,7 @@ public:
 
   // This is the string that throw_event() will throw when the sound finishes
   // playing.  It is not triggered when the sound is stopped with stop().
-  void set_finished_event(const std::string& event);
+  void set_finished_event(std::string event);
   const std::string& get_finished_event() const;
 
   const std::string &get_name() const;
@@ -86,6 +92,10 @@ public:
   void set_3d_attributes(PN_stdfloat px, PN_stdfloat py, PN_stdfloat pz, PN_stdfloat vx, PN_stdfloat vy, PN_stdfloat vz);
   void get_3d_attributes(PN_stdfloat *px, PN_stdfloat *py, PN_stdfloat *pz, PN_stdfloat *vx, PN_stdfloat *vy, PN_stdfloat *vz);
 
+  // Controls the direction of this sound emitter.
+  void set_3d_direction(LVector3 d);
+  LVector3 get_3d_direction() const;
+
   void set_3d_min_distance(PN_stdfloat dist);
   PN_stdfloat get_3d_min_distance() const;
 
@@ -95,15 +105,30 @@ public:
   void set_3d_drop_off_factor(PN_stdfloat factor);
   PN_stdfloat get_3d_drop_off_factor() const;
 
+  void set_3d_cone_inner_angle(PN_stdfloat angle);
+  PN_stdfloat get_3d_cone_inner_angle() const;
+
+  void set_3d_cone_outer_angle(PN_stdfloat angle);
+  PN_stdfloat get_3d_cone_outer_angle() const;
+
+  void set_3d_cone_outer_gain(PN_stdfloat gain);
+  PN_stdfloat get_3d_cone_outer_gain() const;
+
+  // Construct a near-identical copy of this object on the heap and return a pointer to the new copy
+  virtual AudioSound *make_copy() const;
+
   AudioSound::SoundStatus status() const;
 
   void finished();
+
+  const vector_string& get_raw_comment() const;
 
 private:
   OpenALAudioSound(OpenALAudioManager* manager,
                    MovieAudio *movie,
                    bool positional,
                    int mode);
+  OpenALAudioSound(const OpenALAudioSound &copy_sound);
   INLINE void   set_calibrated_clock(double rtc, double t, double playrate);
   INLINE double get_calibrated_clock(double rtc) const;
   void          correct_calibrated_clock(double rtc, double t);
@@ -148,18 +173,19 @@ private:
   PN_stdfloat _balance; // -1..1
   PN_stdfloat _play_rate; // 0..1.0
 
-  bool _positional;
   ALfloat _location[3];
   ALfloat _velocity[3];
+  ALfloat _direction[3];
 
   PN_stdfloat _min_dist;
   PN_stdfloat _max_dist;
   PN_stdfloat _drop_off_factor;
 
-  double _length;
-  int    _loop_count;
+  double      _length;
+  int         _loop_count;
+  PN_stdfloat _loop_start;
 
-  int    _desired_mode;
+  int         _desired_mode;
 
   // The calibrated clock is initialized when the sound starts playing, and is
   // periodically corrected thereafter.
@@ -186,6 +212,16 @@ private:
   // status() for info on whether the sound is playing.
   bool _active;
   bool _paused;
+
+  // these settings are used to define a directional sound source. The inner angle
+  // defines a cone wherein the sound can be heard with normal volume. _cone_outer_angle defines a second cone.
+  // Between the inner and the outer cone the volume is attenuated.
+  // _cone_outer_gain is a factor applied to the volume setting to define the volume in the zone outside of the outer cone.
+  PN_stdfloat _cone_inner_angle;
+  PN_stdfloat _cone_outer_angle;
+  PN_stdfloat _cone_outer_gain;
+
+  vector_string _comment;
 
 public:
   static TypeHandle get_class_type() {

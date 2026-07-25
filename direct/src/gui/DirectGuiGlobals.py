@@ -3,14 +3,23 @@ Global definitions used by Direct Gui Classes and handy constants
 that can be used during widget construction
 """
 
-__all__ = []
+__all__ = ()
 
-from panda3d.core import *
+from panda3d.core import (
+    KeyboardButton,
+    MouseButton,
+    PGButton,
+    PGEntry,
+    PGFrameStyle,
+    PGSliderBar,
+    TextNode,
+)
 
 defaultFont = None
 defaultFontFunc = TextNode.getDefaultFont
-defaultClickSound = None
 defaultRolloverSound = None
+defaultClickSound = None
+defaultReleaseSound = None
 defaultDialogGeom = None
 defaultDialogRelief = PGFrameStyle.TBevelOut
 drawOrder = 100
@@ -121,6 +130,13 @@ def setDefaultClickSound(newSound):
     global defaultClickSound
     defaultClickSound = newSound
 
+def getDefaultReleaseSound():
+    return defaultReleaseSound
+
+def setDefaultReleaseSound(newSound):
+    global defaultReleaseSound
+    defaultReleaseSound = newSound
+
 def getDefaultFont():
     global defaultFont
     if defaultFont is None:
@@ -138,11 +154,9 @@ def setDefaultFontFunc(newFontFunc):
     defaultFontFunc = newFontFunc
 
 def getDefaultDialogGeom():
-    global defaultDialogGeom
     return defaultDialogGeom
 
 def getDefaultDialogRelief():
-    global defaultDialogRelief
     return defaultDialogRelief
 
 def setDefaultDialogGeom(newDialogGeom, relief=None):

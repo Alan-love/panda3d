@@ -41,8 +41,9 @@ TypeHandle CollisionVisualizer::_type_handle;
  *
  */
 CollisionVisualizer::
-CollisionVisualizer(const std::string &name) : PandaNode(name), _lock("CollisionVisualizer") {
+CollisionVisualizer(std::string name) : PandaNode(std::move(name)), _lock("CollisionVisualizer") {
   set_cull_callback();
+  set_renderable();
 
   // We always want to render the CollisionVisualizer node itself (even if it
   // doesn't appear to have any geometry within it).
@@ -62,6 +63,7 @@ CollisionVisualizer(const CollisionVisualizer &copy) :
   _normal_scale(copy._normal_scale) {
 
   set_cull_callback();
+  set_renderable();
 
   // We always want to render the CollisionVisualizer node itself (even if it
   // doesn't appear to have any geometry within it).
@@ -145,12 +147,9 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
       bool was_detected = (solid_info._detected_count > 0);
       PT(PandaNode) node = solid->get_viz(trav, xform_data, !was_detected);
       if (node != nullptr) {
-        CullTraverserData next_data(xform_data, node);
-
         // We don't want to inherit the render state from above for these
         // guys.
-        next_data._state = get_viz_state();
-        trav->traverse(next_data);
+        trav->traverse_down(xform_data, node, xform_data._net_transform, get_viz_state());
       }
     }
 
@@ -208,11 +207,8 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
           PT(Geom) geom = new Geom(point_vdata);
           geom->add_primitive(points);
 
-          CullableObject *object =
-            new CullableObject(geom, point_state,
-                               xform_data.get_internal_transform(trav));
-
-          trav->get_cull_handler()->record_object(object, trav);
+          trav->get_cull_handler()->record_object(CullableObject(
+            geom, point_state, xform_data.get_internal_transform(trav)), trav);
         }
 
         // Draw the normal vector at the surface point.
@@ -237,11 +233,8 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
           PT(Geom) geom = new Geom(line_vdata);
           geom->add_primitive(lines);
 
-          CullableObject *object =
-            new CullableObject(geom, empty_state,
-                               xform_data.get_internal_transform(trav));
-
-          trav->get_cull_handler()->record_object(object, trav);
+          trav->get_cull_handler()->record_object(CullableObject(
+            geom, empty_state, xform_data.get_internal_transform(trav)), trav);
         }
       }
     }
@@ -250,18 +243,6 @@ cull_callback(CullTraverser *trav, CullTraverserData &data) {
   // Now carry on to render our child nodes.
   return true;
 }
-
-/**
- * Returns true if there is some value to visiting this particular node during
- * the cull traversal for any camera, false otherwise.  This will be used to
- * optimize the result of get_net_draw_show_mask(), so that any subtrees that
- * contain only nodes for which is_renderable() is false need not be visited.
- */
-bool CollisionVisualizer::
-is_renderable() const {
-  return true;
-}
-
 
 /**
  * Writes a brief description of the node to the indicated output stream.

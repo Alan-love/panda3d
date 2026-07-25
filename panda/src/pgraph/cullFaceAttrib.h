@@ -23,7 +23,7 @@ class FactoryParams;
 /**
  * Indicates which faces should be culled based on their vertex ordering.
  */
-class EXPCL_PANDA_PGRAPH CullFaceAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH CullFaceAttrib final : public RenderAttrib {
 PUBLISHED:
   enum Mode {
     M_cull_none,                // Cull no polygons
@@ -33,6 +33,7 @@ PUBLISHED:
   };
 
 private:
+  friend class StaticObject<CullFaceAttrib>;
   INLINE CullFaceAttrib(Mode mode, bool reverse);
 
 PUBLISHED:
@@ -87,8 +88,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "CullFaceAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100,
-                                 new CullFaceAttrib(M_cull_clockwise, false));
+    static StaticObject<CullFaceAttrib> default_attrib(M_cull_clockwise, false);
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

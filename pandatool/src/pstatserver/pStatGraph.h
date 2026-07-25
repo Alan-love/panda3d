@@ -52,11 +52,12 @@ public:
     GBS_normal,
     GBS_target,
     GBS_user,
+    GBS_frame,
   };
 
   class GuideBar {
   public:
-    GuideBar(double height, const std::string &label, GuideBarStyle style);
+    GuideBar(double height, std::string label, GuideBarStyle style);
     GuideBar(const GuideBar &copy);
 
     double _height;
@@ -83,12 +84,20 @@ public:
 
   INLINE void set_guide_bar_units(int unit_mask);
   INLINE int get_guide_bar_units() const;
-  INLINE void set_guide_bar_unit_name(const std::string &unit_name);
+  INLINE void set_guide_bar_unit_name(std::string unit_name);
   INLINE const std::string &get_guide_bar_unit_name() const;
 
   static std::string format_number(double value);
   static std::string format_number(double value, int guide_bar_units,
-                              const std::string &unit_name = std::string());
+                              std::string_view unit_name = std::string_view());
+
+  virtual void write_datagram(Datagram &dg) const;
+  virtual void read_datagram(DatagramIterator &scan);
+
+  virtual bool get_window_state(int &x, int &y, int &width, int &height,
+                                bool &maximized, bool &minimized) const;
+  virtual void set_window_state(int x, int y, int width, int height,
+                                bool maximized, bool minimized);
 
 protected:
   virtual void normal_guide_bars()=0;

@@ -29,10 +29,8 @@ PUBLISHED:
   void operator = (const TextureCollection &copy);
   INLINE ~TextureCollection();
 
-#ifdef HAVE_PYTHON
-  EXTENSION(TextureCollection(PyObject *self, PyObject *sequence));
-  EXTENSION(PyObject *__reduce__(PyObject *self) const);
-#endif
+  PY_EXTENSION(TextureCollection(PyObject *self, PyObject *sequence));
+  PY_EXTENSION(PyObject *__reduce__(PyObject *self) const);
 
   void add_texture(Texture *texture);
   bool remove_texture(Texture *texture);
@@ -43,7 +41,7 @@ PUBLISHED:
   void clear();
   void reserve(size_t num);
 
-  Texture *find_texture(const std::string &name) const;
+  Texture *find_texture(std::string_view name) const;
 
   int get_num_textures() const;
   Texture *get_texture(int index) const;

@@ -28,7 +28,7 @@ class FactoryParams;
  * effect unless you actually want it to be at least partially transparent
  * (and it has alpha components less than 1).
  */
-class EXPCL_PANDA_PGRAPH TransparencyAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH TransparencyAttrib final : public RenderAttrib {
 PUBLISHED:
   enum Mode {
     // The first two should be specifically 0 and 1, for historical reasons
@@ -44,6 +44,7 @@ PUBLISHED:
   };
 
 private:
+  friend class StaticObject<TransparencyAttrib>;
   INLINE TransparencyAttrib(Mode mode = M_none);
 
 PUBLISHED:
@@ -88,7 +89,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "TransparencyAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100, new TransparencyAttrib);
+    static StaticObject<TransparencyAttrib> default_attrib;
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

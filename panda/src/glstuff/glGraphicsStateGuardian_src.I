@@ -15,7 +15,7 @@
  * If debug markers are enabled, pushes the beginning of a group marker.
  */
 INLINE void CLP(GraphicsStateGuardian)::
-push_group_marker(const std::string &marker) {
+push_group_marker(std::string_view marker) {
 #if !defined(NDEBUG) && !defined(OPENGLES_1)
   if (_glPushGroupMarker != nullptr) {
     _glPushGroupMarker(marker.size(), marker.data());
@@ -182,6 +182,22 @@ has_fixed_function_pipeline() const {
 }
 
 /**
+ *
+ */
+INLINE int CLP(GraphicsStateGuardian)::
+get_max_vertex_attrib_stride() const {
+#ifdef __EMSCRIPTEN__
+  // WebGL has a static limit of 255 (yeah, that low).
+  return 255;
+#elif defined(OPENGLES_1)
+  // Best guess.
+  return 2048;
+#else
+  return _max_vertex_attrib_stride;
+#endif
+}
+
+/**
  * Calls glFinish() if the config variable gl-finish is set True.
  */
 INLINE void CLP(GraphicsStateGuardian)::
@@ -198,7 +214,7 @@ maybe_gl_finish() const {
  * otherwise.  The extension name is case-sensitive.
  */
 INLINE bool CLP(GraphicsStateGuardian)::
-has_extension(const std::string &extension) const {
+has_extension(std::string_view extension) const {
   bool has_ext = (_extensions.find(extension) != _extensions.end());
 #ifndef NDEBUG
   if (GLCAT.is_debug()) {
@@ -240,8 +256,16 @@ INLINE bool CLP(GraphicsStateGuardian)::
 is_at_least_gles_version(int major_version, int minor_version) const {
 #ifndef OPENGLES
   return false;
+
 #elif defined(OPENGLES_1)
   return major_version == 1 && _gl_version_minor >= minor_version;
+
+/*#elif defined(__EMSCRIPTEN__)
+  // We're running WebGL.  WebGL 1 is based on OpenGL ES 2, and
+  // WebGL 2 is based on OpenGL ES 3.  So add one to the major version.
+  // There don't appear to be minor WebGL versions (yet).
+  return (_gl_version_major + 1 >= major_version);
+*/
 #else
   if (_gl_version_major < major_version) {
     return false;

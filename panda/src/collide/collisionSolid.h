@@ -48,7 +48,7 @@ public:
   CollisionSolid(const CollisionSolid &copy);
   virtual ~CollisionSolid();
 
-  virtual CollisionSolid *make_copy()=0;
+  [[nodiscard]] virtual CollisionSolid *make_copy()=0;
 protected:
   virtual PT(CopyOnWriteObject) make_cow_copy();
 
@@ -181,6 +181,7 @@ private:
   friend class CollisionParabola;
   friend class CollisionHandlerFluidPusher;
   friend class CollisionBox;
+  friend class CollisionHeightfield;
 };
 
 INLINE std::ostream &operator << (std::ostream &out, const CollisionSolid &cs) {

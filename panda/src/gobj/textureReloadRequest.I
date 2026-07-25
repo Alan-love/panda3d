@@ -16,10 +16,10 @@
  * load_async(), to begin an asynchronous load.
  */
 INLINE TextureReloadRequest::
-TextureReloadRequest(const std::string &name,
+TextureReloadRequest(std::string name,
                      PreparedGraphicsObjects *pgo, Texture *texture,
                      bool allow_compressed) :
-  AsyncTask(name),
+  AsyncTask(std::move(name)),
   _pgo(pgo),
   _texture(texture),
   _allow_compressed(allow_compressed)
@@ -62,5 +62,5 @@ get_allow_compressed() const {
  */
 INLINE bool TextureReloadRequest::
 is_ready() const {
-  return (FutureState)AtomicAdjust::get(_future_state) == FS_finished;
+  return (FutureState)_future_state.load(std::memory_order_relaxed) == FS_finished;
 }

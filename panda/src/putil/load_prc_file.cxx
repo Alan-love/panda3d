@@ -78,12 +78,12 @@ load_prc_file(const Filename &filename) {
  * loaded prc files is listed.
  */
 EXPCL_PANDA_PUTIL ConfigPage *
-load_prc_file_data(const std::string &name, const std::string &data) {
+load_prc_file_data(std::string name, const std::string &data) {
   std::istringstream strm(data);
 
   ConfigPageManager *cp_mgr = ConfigPageManager::get_global_ptr();
 
-  ConfigPage *page = cp_mgr->make_explicit_page(name);
+  ConfigPage *page = cp_mgr->make_explicit_page(std::move(name));
   bool read_ok = page->read_prc(strm);
 
   if (read_ok) {
@@ -112,9 +112,6 @@ unload_prc_file(ConfigPage *page) {
   return cp_mgr->delete_explicit_page(page);
 }
 
-
-#ifdef HAVE_OPENSSL
-
 /**
  * Fills HashVal with the hash from the current prc file state as reported by
  * ConfigVariableManager::write_prc_variables().
@@ -126,5 +123,3 @@ hash_prc_variables(HashVal &hash) {
   cv_mgr->write_prc_variables(strm);
   hash.hash_string(strm.str());
 }
-
-#endif  // HAVE_OPENSSL

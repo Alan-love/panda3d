@@ -29,7 +29,7 @@
  * refraction maps, for instance to make shiny surfaces, as well as other
  * special effects such as projective texturing.
  */
-class EXPCL_PANDA_PGRAPH TexGenAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH TexGenAttrib final : public RenderAttrib {
 PUBLISHED:
   // We inherit the definition of our Mode enumerated type from RenderAttrib.
   // Normally, Mode would be defined here, but we define it in the base class
@@ -37,6 +37,7 @@ PUBLISHED:
   typedef RenderAttrib::TexGenMode Mode;
 
 protected:
+  friend class StaticObject<TexGenAttrib>;
   INLINE TexGenAttrib();
   INLINE TexGenAttrib(const TexGenAttrib &copy);
 
@@ -133,7 +134,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "TexGenAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100, new TexGenAttrib);
+    static StaticObject<TexGenAttrib> default_attrib;
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

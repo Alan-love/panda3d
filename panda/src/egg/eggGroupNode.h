@@ -58,7 +58,7 @@ private:
   // Here begins the actual public interface to EggGroupNode.
 
 PUBLISHED:
-  explicit EggGroupNode(const std::string &name = "") : EggNode(name) { }
+  explicit EggGroupNode(std::string name = "") : EggNode(std::move(name)) { }
   EggGroupNode(const EggGroupNode &copy);
   EggGroupNode &operator = (const EggGroupNode &copy);
   virtual ~EggGroupNode();
@@ -108,14 +108,14 @@ PUBLISHED:
   EggNode *get_first_child();
   EggNode *get_next_child();
 
-  EXTENSION(PyObject *get_children() const);
-  MAKE_PROPERTY(children, get_children);
+  PY_EXTENSION(PyObject *get_children() const);
+  PY_MAKE_PROPERTY(children, get_children);
 
   EggNode *add_child(EggNode *node);
   PT(EggNode) remove_child(EggNode *node);
   void steal_children(EggGroupNode &other);
 
-  EggNode *find_child(const std::string &name) const;
+  EggNode *find_child(std::string_view name) const;
 
   bool has_absolute_pathnames() const;
   void resolve_filenames(const DSearchPath &searchpath);

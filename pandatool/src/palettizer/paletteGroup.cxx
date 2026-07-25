@@ -50,8 +50,8 @@ PaletteGroup() {
  * palette groups into different install directories.
  */
 void PaletteGroup::
-set_dirname(const string &dirname) {
-  _dirname = dirname;
+set_dirname(std::string dirname) {
+  _dirname = std::move(dirname);
 }
 
 /**
@@ -560,7 +560,7 @@ update_images(bool redo_all) {
 void PaletteGroup::
 register_with_read_factory() {
   BamReader::get_factory()->
-    register_factory(get_class_type(), make_PaletteGroup);
+    register_factory(get_class_type(), make_from_bam);
 }
 
 /**
@@ -654,7 +654,7 @@ finalize(BamReader *) {
  * all the data read.
  */
 TypedWritable *PaletteGroup::
-make_PaletteGroup(const FactoryParams &params) {
+make_from_bam(const FactoryParams &params) {
   PaletteGroup *me = new PaletteGroup;
   DatagramIterator scan;
   BamReader *manager;

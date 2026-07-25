@@ -34,13 +34,15 @@
  */
 class EXPCL_PANDA_LINMATH ConfigVariableColor : public ConfigVariable {
 PUBLISHED:
-  INLINE ConfigVariableColor(const std::string &name);
-  INLINE ConfigVariableColor(const std::string &name, const LColor &default_value,
-                             const std::string &description = std::string(),
-                             int flags = 0);
-  INLINE ConfigVariableColor(const std::string &name, const std::string &default_value,
-                             const std::string &description = std::string(),
-                             int flags = 0);
+  INLINE explicit ConfigVariableColor(std::string_view name);
+  INLINE explicit ConfigVariableColor(std::string_view name,
+                                      const LColor &default_value,
+                                      std::string_view description = "",
+                                      int flags = 0);
+  INLINE explicit ConfigVariableColor(std::string_view name,
+                                      std::string_view default_value,
+                                      std::string_view description = "",
+                                      int flags = 0);
 
   INLINE void operator = (const LColor &value);
   INLINE operator const LColor & () const;
@@ -55,7 +57,7 @@ private:
   void set_default_value(const LColor &default_value);
 
 private:
-  mutable AtomicAdjust::Integer _local_modified;
+  mutable Modified _local_modified;
   mutable LColor _cache;
 };
 

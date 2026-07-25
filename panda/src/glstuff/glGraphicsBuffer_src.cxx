@@ -16,6 +16,18 @@
 using std::max;
 using std::min;
 
+/**
+ * Returns a copy of the FrameBufferProperties, but without back buffers.
+ * This is used since the GraphicsOutput constructor makes some decisions
+ * based on whether this is set, so we need to unset it early.
+ */
+static FrameBufferProperties
+without_back_buffers(const FrameBufferProperties &fb_prop) {
+  FrameBufferProperties copy(fb_prop);
+  copy.set_back_buffers(0);
+  return copy;
+}
+
 TypeHandle CLP(GraphicsBuffer)::_type_handle;
 
 /**
@@ -23,19 +35,19 @@ TypeHandle CLP(GraphicsBuffer)::_type_handle;
  */
 CLP(GraphicsBuffer)::
 CLP(GraphicsBuffer)(GraphicsEngine *engine, GraphicsPipe *pipe,
-                    const std::string &name,
+                    std::string name,
                     const FrameBufferProperties &fb_prop,
                     const WindowProperties &win_prop,
                     int flags,
                     GraphicsStateGuardian *gsg,
                     GraphicsOutput *host) :
-  GraphicsBuffer(engine, pipe, name, fb_prop, win_prop, flags, gsg, host),
-  _bind_texture_pcollector(_draw_window_pcollector, "Bind textures"),
-  _generate_mipmap_pcollector(_draw_window_pcollector, "Generate mipmaps"),
-  _resolve_multisample_pcollector(_draw_window_pcollector, "Resolve multisamples"),
+  GraphicsBuffer(engine, pipe, std::move(name), without_back_buffers(fb_prop), win_prop, flags, gsg, host),
   _requested_multisamples(0),
   _requested_coverage_samples(0),
-  _rb_context(nullptr)
+  _rb_context(nullptr),
+  _bind_texture_pcollector(_draw_window_pcollector, "Bind textures"),
+  _generate_mipmap_pcollector(_draw_window_pcollector, "Generate mipmaps"),
+  _resolve_multisample_pcollector(_draw_window_pcollector, "Resolve multisamples")
 {
   // A FBO doesn't have a back buffer.
   _draw_buffer_type       = RenderBuffer::T_front;
@@ -268,11 +280,8 @@ begin_frame(FrameMode mode, Thread *current_thread) {
     if (gl_enable_memory_barriers && _fbo_multisample == 0) {
       CLP(GraphicsStateGuardian) *glgsg = (CLP(GraphicsStateGuardian) *)_gsg.p();
 
-      TextureContexts::iterator it;
-      for (it = _texture_contexts.begin(); it != _texture_contexts.end(); ++it) {
-        CLP(TextureContext) *gtc = *it;
-
-        if (gtc != nullptr && gtc->needs_barrier(GL_FRAMEBUFFER_BARRIER_BIT)) {
+      for (CLP(TextureContext) *gtc : _texture_contexts) {
+        if (gtc->needs_barrier(GL_FRAMEBUFFER_BARRIER_BIT, true)) {
           glgsg->issue_memory_barrier(GL_FRAMEBUFFER_BARRIER_BIT);
           // If we've done it for one, we've done it for all.
           break;
@@ -360,7 +369,7 @@ check_fbo() {
 void CLP(GraphicsBuffer)::
 rebuild_bitplanes() {
   check_host_valid();
-  if (_gsg == 0) {
+  if (_gsg == nullptr) {
     return;
   }
 
@@ -410,6 +419,7 @@ rebuild_bitplanes() {
   Texture *attach[RTP_COUNT];
   memset(attach, 0, sizeof(Texture *) * RTP_COUNT);
   _texture_contexts.clear();
+  _textures.clear();
 
   // Sort the textures list into appropriate slots.
   {
@@ -449,15 +459,17 @@ rebuild_bitplanes() {
       }
 
       // If we can't bind this type of texture, punt it.
-      if ((tex->get_texture_type() != Texture::TT_2d_texture) &&
-          (tex->get_texture_type() != Texture::TT_3d_texture) &&
-          (tex->get_texture_type() != Texture::TT_2d_texture_array) &&
-          (tex->get_texture_type() != Texture::TT_cube_map)) {
+      Texture::TextureType texture_type = tex->get_texture_type();
+      if (texture_type != Texture::TT_2d_texture &&
+          texture_type != Texture::TT_3d_texture &&
+          texture_type != Texture::TT_2d_texture_array &&
+          texture_type != Texture::TT_cube_map &&
+          texture_type != Texture::TT_cube_map_array) {
         ((CData *)cdata.p())->_textures[i]._rtm_mode = RTM_copy_texture;
         continue;
       }
 
-      if (_rb_size_z > 1 && tex->get_texture_type() == Texture::TT_2d_texture) {
+      if (_rb_size_z > 1 && texture_type == Texture::TT_2d_texture) {
         // We can't bind a 2D texture to a layered FBO.  If the user happened
         // to request RTM_bind_layered for a 2D texture, that's just silly,
         // and we can't render to anything but the first layer anyway.
@@ -478,6 +490,12 @@ rebuild_bitplanes() {
 
       // Assign the texture to this slot.
       attach[plane] = tex;
+
+      if (plane == RTP_color && _fb_properties.is_stereo()) {
+        if (tex->get_num_views() < 2) {
+          tex->set_num_views(2);
+        }
+      }
     }
   }
 
@@ -504,6 +522,18 @@ rebuild_bitplanes() {
       // 32-bit float depth is supported in conjunction with depth stencil,
       // but it's a waste.  Let's not do it unless the user requested stencil.
       _use_depth_stencil = false;
+
+#ifdef __APPLE__
+    } else if (_fb_properties.get_depth_bits() > 0 && _requested_multisamples) {
+      // Apple's OpenGL driver doesn't like blitting depth-stencil targets.
+      // See GitHub issue #1719
+      _use_depth_stencil = false;
+      if (_fb_properties.get_depth_bits() < 24) {
+        // Make sure we do get at least as many depth bits as we would have
+        // gotten if we did get a depth-stencil buffer.
+        _fb_properties.set_depth_bits(24);
+      }
+#endif
 
     } else if (_fb_properties.get_depth_bits() > 0) {
       // Let's use a depth stencil buffer by default, if a depth buffer was
@@ -581,7 +611,9 @@ rebuild_bitplanes() {
         // The second tex view has already been initialized, so bind it
         // straight away.
         if (attach[RTP_color] != nullptr) {
-          attach_tex(layer, 1, attach[RTP_color], next++);
+          CLP(TextureContext) *gtc = _texture_contexts.back();
+          nassertv(gtc->get_texture() == attach[RTP_color]);
+          attach_tex(next++, gtc, 1, layer);
         } else {
           // XXX hack: I needed a slot to use, and we don't currently use
           // RTP_stencil and it's treated as a color attachment below, so this
@@ -608,10 +640,23 @@ rebuild_bitplanes() {
 
     if (_have_any_color || have_any_depth) {
       // Clear if the fbo was just created, regardless of the clear settings per
-      // frame.
+      // frame.  However, we don't do this for textures, which may have useful
+      // contents that need to be preserved.
       if (_initial_clear) {
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        GLbitfield mask = 0;
+        if (_rb[RTP_color]) {
+          glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+          mask |= GL_COLOR_BUFFER_BIT;
+        }
+        if (_rb[RTP_depth]) {
+          mask |= GL_DEPTH_BUFFER_BIT;
+        }
+        if (_rb[RTP_depth_stencil]) {
+          mask |= GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+        }
+        if (mask != 0) {
+          glClear(mask);
+        }
       }
 #ifndef OPENGLES_1
     } else if (glgsg->_supports_empty_framebuffer) {
@@ -776,7 +821,21 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
       _fb_properties.setup_color_texture(tex);
     }
 
-    GLenum target = glgsg->get_texture_target(tex->get_texture_type());
+    if (slot == RTP_color && !tex->has_clear_color()) {
+      tex->set_clear_color(LColor(0, 0, 0, 1));
+    }
+
+    _textures.push_back(tex);
+
+    TextureContext *tc = tex->prepare_now(glgsg->get_prepared_objects(), glgsg);
+    nassertv(tc != nullptr);
+    CLP(TextureContext) *gtc = DCAST(CLP(TextureContext), tc);
+
+    glgsg->update_texture(gtc, true);
+    gtc->set_active(true);
+    _texture_contexts.push_back(gtc);
+
+    GLenum target = gtc->_target;
     if (target == GL_TEXTURE_CUBE_MAP) {
       target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + layer;
     }
@@ -786,7 +845,14 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
         GLCAT.debug() << "Binding texture " << *tex << " to depth attachment.\n";
       }
 
-      attach_tex(layer, 0, tex, GL_DEPTH_ATTACHMENT_EXT);
+      if (slot != RTP_depth_stencil && _rb[RTP_depth_stencil] != 0) {
+        // We have a depth-stencil renderbuffer bound, delete it first.
+        // This will automatically unbind it as well.
+        glgsg->_glDeleteRenderbuffers(1, &(_rb[RTP_depth_stencil]));
+        _rb[RTP_depth_stencil] = 0;
+      }
+
+      attach_tex(GL_DEPTH_ATTACHMENT_EXT, gtc, 0, layer);
 
 #ifndef OPENGLES
       GLint depth_size = 0;
@@ -799,7 +865,7 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
           GLCAT.debug() << "Binding texture " << *tex << " to stencil attachment.\n";
         }
 
-        attach_tex(layer, 0, tex, GL_STENCIL_ATTACHMENT_EXT);
+        attach_tex(GL_STENCIL_ATTACHMENT_EXT, gtc, 0, layer);
 
 #ifndef OPENGLES
         GLint stencil_size = 0;
@@ -813,7 +879,7 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
         GLCAT.debug() << "Binding texture " << *tex << " to color attachment.\n";
       }
 
-      attach_tex(layer, 0, tex, attachpoint);
+      attach_tex(attachpoint, gtc, 0, layer);
 
 #ifndef OPENGLES
       if (attachpoint == GL_COLOR_ATTACHMENT0_EXT) {
@@ -855,10 +921,74 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
         gl_format = GL_DEPTH_COMPONENT16;
       }
       break;
+#ifndef OPENGLES_1
+    case RTP_aux_hrgba_0:
+    case RTP_aux_hrgba_1:
+    case RTP_aux_hrgba_2:
+    case RTP_aux_hrgba_3:
+    case RTP_aux_float_0:
+    case RTP_aux_float_1:
+    case RTP_aux_float_2:
+    case RTP_aux_float_3:
+      if (glgsg->has_extension("GL_EXT_color_buffer_float")) {
+        if (slot >= RTP_aux_float_0 && slot <= RTP_aux_float_3) {
+          gl_format = GL_RGBA32F;
+        } else {
+          gl_format = GL_RGBA16F;
+        }
+      }
+      else if (glgsg->has_extension("GL_EXT_color_buffer_half_float")) {
+        gl_format = GL_RGBA16F_EXT;
+      }
+#endif
     // NB: we currently use RTP_stencil to store the right eye for stereo.
     // case RTP_stencil: gl_format = GL_STENCIL_INDEX8; break
     default:
       if (_fb_properties.get_alpha_bits() == 0) {
+#ifndef OPENGLES_1
+        if (_fb_properties.get_float_color() &&
+            glgsg->has_extension("GL_EXT_color_buffer_float")) {
+          // This extension supports the full range of floating-point formats.
+          if (_fb_properties.get_color_bits() > 16 * 3 ||
+              _fb_properties.get_red_bits() > 16 ||
+              _fb_properties.get_green_bits() > 16 ||
+              _fb_properties.get_blue_bits() > 16) {
+            // 32-bit, which is always floating-point.
+            if (_fb_properties.get_blue_bits() > 0 ||
+                _fb_properties.get_color_bits() == 1 ||
+                _fb_properties.get_color_bits() > 32 * 2) {
+              gl_format = GL_RGB32F;
+            } else if (_fb_properties.get_green_bits() > 0 ||
+                       _fb_properties.get_color_bits() > 32) {
+              gl_format = GL_RG32F;
+            } else {
+              gl_format = GL_R32F;
+            }
+          } else {
+            // 16-bit floating-point.
+            if (_fb_properties.get_blue_bits() > 10 ||
+                _fb_properties.get_color_bits() == 1 ||
+                _fb_properties.get_color_bits() > 32) {
+              gl_format = GL_RGB16F;
+            } else if (_fb_properties.get_blue_bits() > 0) {
+              if (_fb_properties.get_red_bits() > 11 ||
+                  _fb_properties.get_green_bits() > 11) {
+                gl_format = GL_RGB16F;
+              } else {
+                gl_format = GL_R11F_G11F_B10F;
+              }
+            } else if (_fb_properties.get_green_bits() > 0 ||
+                       _fb_properties.get_color_bits() > 16) {
+              gl_format = GL_RG16F;
+            } else {
+              gl_format = GL_R16F;
+            }
+          }
+        } else if (_fb_properties.get_float_color() &&
+                   glgsg->has_extension("GL_EXT_color_buffer_half_float")) {
+          gl_format = GL_RGB16F_EXT;
+        } else
+#endif
         if (_fb_properties.get_color_bits() <= 16) {
           gl_format = GL_RGB565_OES;
         } else if (_fb_properties.get_color_bits() <= 24) {
@@ -866,6 +996,18 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
         } else {
           gl_format = GL_RGB10_EXT;
         }
+#ifndef OPENGLES_1
+      } else if (_fb_properties.get_float_color() &&
+                 glgsg->has_extension("GL_EXT_color_buffer_float")) {
+        if (_fb_properties.get_color_bits() > 16 * 3) {
+          gl_format = GL_RGBA32F;
+        } else {
+          gl_format = GL_RGBA16F;
+        }
+      } else if (_fb_properties.get_float_color() &&
+                 glgsg->has_extension("GL_EXT_color_buffer_half_float")) {
+        gl_format = GL_RGBA16F_EXT;
+#endif
       } else if (_fb_properties.get_color_bits() == 0) {
         gl_format = GL_ALPHA8_EXT;
       } else if (_fb_properties.get_color_bits() <= 12
@@ -1024,7 +1166,9 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
 
     if (slot == RTP_depth_stencil) {
       if (GLCAT.is_debug()) {
-        GLCAT.debug() << "Creating depth stencil renderbuffer.\n";
+        GLCAT.debug()
+          << "Creating depth stencil renderbuffer with format 0x" << std::hex
+          << gl_format << std::dec << ".\n";
       }
       // Allocate renderbuffer storage for depth stencil.
       GLint depth_size = 0, stencil_size = 0;
@@ -1052,7 +1196,9 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
 
     } else if (slot == RTP_depth) {
       if (GLCAT.is_debug()) {
-        GLCAT.debug() << "Creating depth renderbuffer.\n";
+        GLCAT.debug()
+          << "Creating depth renderbuffer with format 0x" << std::hex
+          << gl_format << std::dec << ".\n";
       }
       // Allocate renderbuffer storage for regular depth.
       GLint depth_size = 0;
@@ -1067,6 +1213,11 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
           gl_format = GL_DEPTH_COMPONENT32F;
         } else {
           gl_format = GL_DEPTH_COMPONENT32F_NV;
+        }
+        if (GLCAT.is_debug()) {
+          GLCAT.debug()
+            << "GL_DEPTH_COMPONENT32 not supported, switching to format 0x"
+            << std::hex << gl_format << std::dec << " instead.\n";
         }
         glgsg->_glRenderbufferStorage(GL_RENDERBUFFER_EXT, gl_format, _rb_size_x, _rb_size_y);
         glgsg->_glGetRenderbufferParameteriv(GL_RENDERBUFFER_EXT, GL_RENDERBUFFER_DEPTH_SIZE_EXT, &depth_size);
@@ -1092,7 +1243,9 @@ bind_slot(int layer, bool rb_resize, Texture **attach, RenderTexturePlane slot, 
 
     } else {
       if (GLCAT.is_debug()) {
-        GLCAT.debug() << "Creating color renderbuffer.\n";
+        GLCAT.debug()
+          << "Creating color renderbuffer with format 0x" << std::hex
+          << gl_format << std::dec << ".\n";
       }
       glgsg->_glRenderbufferStorage(GL_RENDERBUFFER_EXT, gl_format, _rb_size_x, _rb_size_y);
 
@@ -1140,12 +1293,33 @@ bind_slot_multisample(bool rb_resize, Texture **attach, RenderTexturePlane slot,
 #ifndef OPENGLES_2
     if (_use_depth_stencil) {
       glgsg->_glBindRenderbuffer(GL_RENDERBUFFER_EXT, _rbm[slot]);
+      GLuint format;
+#ifdef OPENGLES_1
+      format = GL_DEPTH24_STENCIL8_OES;
+#else
+      if (_fb_properties.get_depth_bits() > 24 ||
+          _fb_properties.get_float_depth()) {
+        if (!glgsg->_use_remapped_depth_range) {
+          format = GL_DEPTH32F_STENCIL8;
+        } else {
+          format = GL_DEPTH32F_STENCIL8_NV;
+        }
+      } else {
+        format = GL_DEPTH24_STENCIL8;
+      }
+#endif
+      if (GLCAT.is_debug()) {
+        GLCAT.debug()
+          << "Creating depth stencil renderbuffer with format 0x" << std::hex
+          << format << std::dec << " and " << _requested_multisamples
+          << " multisamples.\n";
+      }
       if (_requested_coverage_samples) {
         glgsg->_glRenderbufferStorageMultisampleCoverage(GL_RENDERBUFFER_EXT, _requested_coverage_samples,
-                                                         _requested_multisamples, GL_DEPTH_STENCIL_EXT,
+                                                         _requested_multisamples, format,
                                                          _rb_size_x, _rb_size_y);
       } else {
-        glgsg->_glRenderbufferStorageMultisample(GL_RENDERBUFFER_EXT, _requested_multisamples, GL_DEPTH_STENCIL_EXT,
+        glgsg->_glRenderbufferStorageMultisample(GL_RENDERBUFFER_EXT, _requested_multisamples, format,
                                                  _rb_size_x, _rb_size_y);
       }
 #ifndef OPENGLES
@@ -1184,6 +1358,22 @@ bind_slot_multisample(bool rb_resize, Texture **attach, RenderTexturePlane slot,
           default:
             break;
         }
+#ifndef OPENGLES
+      } else if (_fb_properties.get_depth_bits() > 24) {
+        format = GL_DEPTH_COMPONENT32;
+      } else if (_fb_properties.get_depth_bits() > 16) {
+        format = GL_DEPTH_COMPONENT24;
+      } else if (_fb_properties.get_depth_bits() > 1) {
+        format = GL_DEPTH_COMPONENT16;
+      } else {
+        format = GL_DEPTH_COMPONENT;
+#endif
+      }
+      if (GLCAT.is_debug()) {
+        GLCAT.debug()
+          << "Creating depth renderbuffer with format 0x" << std::hex
+          << format << std::dec << " and " << _requested_multisamples
+          << " multisamples.\n";
       }
       if (_requested_coverage_samples) {
         glgsg->_glRenderbufferStorageMultisampleCoverage(GL_RENDERBUFFER_EXT, _requested_coverage_samples,
@@ -1223,21 +1413,97 @@ bind_slot_multisample(bool rb_resize, Texture **attach, RenderTexturePlane slot,
       case RTP_aux_rgba_1:
       case RTP_aux_rgba_2:
       case RTP_aux_rgba_3:
+        gl_format = GL_RGBA;
+        break;
       default:
-        if (_fb_properties.get_srgb_color()) {
-          gl_format = GL_SRGB8_ALPHA8;
-        } else if (_fb_properties.get_float_color()) {
-          if (_fb_properties.get_color_bits() > 16 * 3) {
-            gl_format = GL_RGBA32F_ARB;
+        if (_fb_properties.get_alpha_bits() == 0) {
+          if (_fb_properties.get_srgb_color()) {
+            gl_format = GL_SRGB8;
+          } else if (_fb_properties.get_color_bits() > 16 * 3 ||
+                     _fb_properties.get_red_bits() > 16 ||
+                     _fb_properties.get_green_bits() > 16 ||
+                     _fb_properties.get_blue_bits() > 16) {
+            // 32-bit, which is always floating-point.
+            if (_fb_properties.get_blue_bits() > 0 ||
+                _fb_properties.get_color_bits() == 1 ||
+                _fb_properties.get_color_bits() > 32 * 2) {
+              gl_format = GL_RGB32F;
+            } else if (_fb_properties.get_green_bits() > 0 ||
+                       _fb_properties.get_color_bits() > 32) {
+              gl_format = GL_RG32F;
+            } else {
+              gl_format = GL_R32F;
+            }
+          } else if (_fb_properties.get_float_color()) {
+            // 16-bit floating-point.
+            if (_fb_properties.get_blue_bits() > 10 ||
+                _fb_properties.get_color_bits() == 1 ||
+                _fb_properties.get_color_bits() > 32) {
+              gl_format = GL_RGB16F;
+            } else if (_fb_properties.get_blue_bits() > 0) {
+              if (_fb_properties.get_red_bits() > 11 ||
+                  _fb_properties.get_green_bits() > 11) {
+                gl_format = GL_RGB16F;
+              } else {
+                gl_format = GL_R11F_G11F_B10F;
+              }
+            } else if (_fb_properties.get_green_bits() > 0 ||
+                       _fb_properties.get_color_bits() > 16) {
+              gl_format = GL_RG16F;
+            } else {
+              gl_format = GL_R16F;
+            }
+          } else if (_fb_properties.get_color_bits() > 10 * 3 ||
+                     _fb_properties.get_red_bits() > 10 ||
+                     _fb_properties.get_green_bits() > 10 ||
+                     _fb_properties.get_blue_bits() > 10) {
+            // 16-bit normalized.
+            if (_fb_properties.get_blue_bits() > 0 ||
+                _fb_properties.get_color_bits() == 1 ||
+                _fb_properties.get_color_bits() > 16 * 2) {
+              gl_format = GL_RGBA16;
+            } else if (_fb_properties.get_green_bits() > 0 ||
+                       _fb_properties.get_color_bits() > 16) {
+              gl_format = GL_RG16;
+            } else {
+              gl_format = GL_R16;
+            }
+          } else if (_fb_properties.get_color_bits() > 8 * 3 ||
+                     _fb_properties.get_red_bits() > 8 ||
+                     _fb_properties.get_green_bits() > 8 ||
+                     _fb_properties.get_blue_bits() > 8) {
+            gl_format = GL_RGB10_A2;
           } else {
-            gl_format = GL_RGBA16F_ARB;
+            gl_format = GL_RGB;
           }
         } else {
-          gl_format = GL_RGBA;
+          if (_fb_properties.get_srgb_color()) {
+            gl_format = GL_SRGB8_ALPHA8;
+          } else if (_fb_properties.get_float_color()) {
+            if (_fb_properties.get_color_bits() > 16 * 3) {
+              gl_format = GL_RGBA32F_ARB;
+            } else {
+              gl_format = GL_RGBA16F_ARB;
+            }
+          } else {
+            if (_fb_properties.get_color_bits() > 16 * 3) {
+              gl_format = GL_RGBA32F_ARB;
+            } else if (_fb_properties.get_color_bits() > 8 * 3) {
+              gl_format = GL_RGBA16;
+            } else {
+              gl_format = GL_RGBA;
+            }
+          }
         }
         break;
     }
 #endif
+    if (GLCAT.is_debug()) {
+      GLCAT.debug()
+        << "Creating color renderbuffer with format 0x" << std::hex
+        << gl_format << std::dec << " and " << _requested_multisamples
+        << " multisamples.\n";
+    }
     glgsg->_glBindRenderbuffer(GL_RENDERBUFFER_EXT, _rbm[slot]);
     if (_requested_coverage_samples) {
       glgsg->_glRenderbufferStorageMultisampleCoverage(GL_RENDERBUFFER_EXT, _requested_coverage_samples,
@@ -1261,30 +1527,22 @@ bind_slot_multisample(bool rb_resize, Texture **attach, RenderTexturePlane slot,
  * This function attaches the given texture to the given attachment point.
  */
 void CLP(GraphicsBuffer)::
-attach_tex(int layer, int view, Texture *attach, GLenum attachpoint) {
+attach_tex(GLenum attachpoint, CLP(TextureContext) *gtc, int view, int layer) {
+  // We should have created the right number of views ahead of time.
+  nassertv(view < gtc->_num_views);
+
   CLP(GraphicsStateGuardian) *glgsg = (CLP(GraphicsStateGuardian) *)_gsg.p();
-
-  if (view >= attach->get_num_views()) {
-    attach->set_num_views(view + 1);
-  }
-
-  // Create the OpenGL texture object.
-  TextureContext *tc = attach->prepare_now(view, glgsg->get_prepared_objects(), glgsg);
-  nassertv(tc != nullptr);
-  CLP(TextureContext) *gtc = DCAST(CLP(TextureContext), tc);
-
-  glgsg->update_texture(gtc, true);
-  gtc->set_active(true);
-  _texture_contexts.push_back(gtc);
 
   // It seems that binding the texture is necessary before binding to a
   // framebuffer attachment.
-  glgsg->apply_texture(gtc);
+  glgsg->apply_texture(gtc, view);
+
+  GLuint index = gtc->get_view_index(view);
 
 #if !defined(OPENGLES) && defined(SUPPORT_FIXED_FUNCTION)
   if (glgsg->has_fixed_function_pipeline()) {
     GLclampf priority = 1.0f;
-    glPrioritizeTextures(1, &gtc->_index, &priority);
+    glPrioritizeTextures(1, &index, &priority);
   }
 #endif
 
@@ -1292,31 +1550,30 @@ attach_tex(int layer, int view, Texture *attach, GLenum attachpoint) {
   if (_rb_size_z != 1) {
     // Bind all of the layers of the texture.
     nassertv(glgsg->_glFramebufferTexture != nullptr);
-    glgsg->_glFramebufferTexture(GL_FRAMEBUFFER_EXT, attachpoint,
-                                 gtc->_index, 0);
+    glgsg->_glFramebufferTexture(GL_FRAMEBUFFER_EXT, attachpoint, index, 0);
     return;
   }
 #endif
 
-  GLenum target = glgsg->get_texture_target(attach->get_texture_type());
-  if (target == GL_TEXTURE_CUBE_MAP) {
-    target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + layer;
-  }
-
+  GLenum target = gtc->_target;
   switch (target) {
 #ifndef OPENGLES_1
   case GL_TEXTURE_3D:
     glgsg->_glFramebufferTexture3D(GL_FRAMEBUFFER_EXT, attachpoint,
-                                   target, gtc->_index, 0, layer);
+                                   target, index, 0, layer);
     break;
   case GL_TEXTURE_2D_ARRAY:
+  case GL_TEXTURE_CUBE_MAP_ARRAY:
     glgsg->_glFramebufferTextureLayer(GL_FRAMEBUFFER_EXT, attachpoint,
-                                      gtc->_index, 0, layer);
+                                      index, 0, layer);
     break;
 #endif
+  case GL_TEXTURE_CUBE_MAP:
+    target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + layer;
+    [[fallthrough]];
   default:
     glgsg->_glFramebufferTexture2D(GL_FRAMEBUFFER_EXT, attachpoint,
-                                   target, gtc->_index, 0);
+                                   target, index, 0);
   }
 }
 
@@ -1336,10 +1593,7 @@ generate_mipmaps() {
 
   // PStatGPUTimer timer(glgsg, _generate_mipmap_pcollector);
 
-  pvector<CLP(TextureContext)*>::iterator it;
-  for (it = _texture_contexts.begin(); it != _texture_contexts.end(); ++it) {
-    CLP(TextureContext) *gtc = *it;
-
+  for (CLP(TextureContext) *gtc : _texture_contexts) {
     if (gtc->_generate_mipmaps) {
       glgsg->generate_mipmaps(gtc);
     }
@@ -1661,7 +1915,7 @@ close_buffer() {
 
   check_host_valid();
 
-  if (_gsg == 0) {
+  if (_gsg == nullptr) {
     return;
   }
 
@@ -1824,7 +2078,7 @@ unregister_shared_depth_buffer(GraphicsOutput *graphics_output) {
  */
 void CLP(GraphicsBuffer)::
 report_my_errors(int line, const char *file) {
-  if (_gsg == 0) {
+  if (_gsg == nullptr) {
     GLenum error_code = glGetError();
     if (error_code != GL_NO_ERROR) {
       GLCAT.error() << file << ", line " << line << ": GL error " << (int)error_code << "\n";
@@ -1871,11 +2125,8 @@ resolve_multisamples() {
   if (gl_enable_memory_barriers) {
     // Issue memory barriers as necessary to make sure that the texture memory
     // is synchronized before we blit to it.
-    pvector<CLP(TextureContext)*>::iterator it;
-    for (it = _texture_contexts.begin(); it != _texture_contexts.end(); ++it) {
-      CLP(TextureContext) *gtc = *it;
-
-      if (gtc != nullptr && gtc->needs_barrier(GL_FRAMEBUFFER_BARRIER_BIT)) {
+    for (CLP(TextureContext) *gtc : _texture_contexts) {
+      if (gtc->needs_barrier(GL_FRAMEBUFFER_BARRIER_BIT, true)) {
         glgsg->issue_memory_barrier(GL_FRAMEBUFFER_BARRIER_BIT);
         // If we've done it for one, we've done it for all.
         break;
@@ -1922,16 +2173,7 @@ resolve_multisamples() {
     }
   }
 
-  if (do_depth_blit) {
-    glgsg->_glBlitFramebuffer(0, 0, _rb_size_x, _rb_size_y, 0, 0, _rb_size_x, _rb_size_y,
-                              GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT,
-                              GL_NEAREST);
-  } else {
-    glgsg->_glBlitFramebuffer(0, 0, _rb_size_x, _rb_size_y, 0, 0, _rb_size_x, _rb_size_y,
-                              GL_COLOR_BUFFER_BIT,
-                              GL_NEAREST);
-  }
-  // Now handle the other color buffers.
+  // First handle the auxiliary buffers.
 #ifndef OPENGLES
   int next = GL_COLOR_ATTACHMENT1_EXT;
   if (_fb_properties.is_stereo()) {
@@ -1963,11 +2205,9 @@ resolve_multisamples() {
     next += 1;
   }
 #endif
-  report_my_gl_errors();
 
-  // Bind the regular FBO as read buffer for the sake of copy_to_textures.
-  glgsg->_glBindFramebuffer(GL_READ_FRAMEBUFFER_EXT, fbo);
-
+  // Now blit the normal color target, plus any depth/stencil.
+  // We do this last because we want to leave attachment 0 bound at the end.
 #ifndef OPENGLES
   if (_have_any_color) {
     glDrawBuffer(GL_COLOR_ATTACHMENT0_EXT);
@@ -1977,5 +2217,20 @@ resolve_multisamples() {
     glReadBuffer(GL_NONE);
   }
 #endif
+
+  if (do_depth_blit) {
+    glgsg->_glBlitFramebuffer(0, 0, _rb_size_x, _rb_size_y, 0, 0, _rb_size_x, _rb_size_y,
+                              GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT,
+                              GL_NEAREST);
+  }
+  else if (_have_any_color) {
+    glgsg->_glBlitFramebuffer(0, 0, _rb_size_x, _rb_size_y, 0, 0, _rb_size_x, _rb_size_y,
+                              GL_COLOR_BUFFER_BIT,
+                              GL_NEAREST);
+  }
+
+  // Bind the regular FBO as read buffer for the sake of copy_to_textures.
+  glgsg->_glBindFramebuffer(GL_READ_FRAMEBUFFER_EXT, fbo);
+
   report_my_gl_errors();
 }

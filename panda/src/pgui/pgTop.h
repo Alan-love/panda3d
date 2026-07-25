@@ -37,7 +37,7 @@ class PGMouseWatcherGroup;
  */
 class EXPCL_PANDA_PGUI PGTop : public PandaNode {
 PUBLISHED:
-  explicit PGTop(const std::string &name);
+  explicit PGTop(std::string name);
   virtual ~PGTop();
 
 protected:
@@ -46,15 +46,17 @@ protected:
 public:
   virtual PandaNode *make_copy() const;
   virtual bool cull_callback(CullTraverser *trav, CullTraverserData &data);
-  virtual bool is_renderable() const;
 
 PUBLISHED:
   void set_mouse_watcher(MouseWatcher *watcher);
   INLINE MouseWatcher *get_mouse_watcher() const;
   INLINE MouseWatcherGroup *get_group() const;
+  MAKE_PROPERTY(mouse_watcher, get_mouse_watcher, set_mouse_watcher);
+  MAKE_PROPERTY(group, get_group);
 
   INLINE void set_start_sort(int start_sort);
   INLINE int get_start_sort() const;
+  MAKE_PROPERTY(start_sort, get_start_sort, set_start_sort);
 
 public:
   // These methods duplicate the functionality of MouseWatcherGroup.

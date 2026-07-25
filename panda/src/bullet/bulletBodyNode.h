@@ -32,7 +32,7 @@
  */
 class EXPCL_PANDABULLET BulletBodyNode : public PandaNode {
 protected:
-  BulletBodyNode(const char *name);
+  BulletBodyNode(std::string name);
   BulletBodyNode(const BulletBodyNode &copy);
 
 PUBLISHED:
@@ -52,6 +52,7 @@ PUBLISHED:
   BoundingSphere get_shape_bounds() const;
 
   void add_shapes_from_collision_solids(CollisionNode *cnode);
+  void add_shapes_from_collision_solids(CollisionNode *cnode, const TransformState *relative_transform);
 
   // Static and kinematic
   bool is_static() const;

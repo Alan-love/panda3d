@@ -50,19 +50,15 @@ PUBLISHED:
 
 public:
   virtual bool has_magic_number() const;
-  virtual bool matches_magic_number(const std::string &magic_number) const;
+  virtual bool matches_magic_number(std::string_view magic_number) const;
 
   virtual PNMReader *make_reader(std::istream *file, bool owns_file = true,
-                                 const std::string &magic_number = std::string());
+                                 std::string_view magic_number = std::string_view());
   virtual PNMWriter *make_writer(std::ostream *file, bool owns_file = true);
 
   // The TypedWritable interface follows.
 public:
-  static void register_with_read_factory();
   virtual void write_datagram(BamWriter *writer, Datagram &datagram);
-
-protected:
-  static TypedWritable *make_PNMFileType(const FactoryParams &params);
 
 public:
   static TypeHandle get_class_type() {

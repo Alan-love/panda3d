@@ -24,9 +24,6 @@
 /* Define to use doubles for most numbers, intead of single-precision floats. */
 #cmakedefine STDFLOAT_DOUBLE
 
-/* Define if we have built libRocket available and built with Python support. */
-#cmakedefine HAVE_ROCKET_PYTHON
-
 /* Define if we have ARToolKit available. */
 #cmakedefine HAVE_ARTOOLKIT
 
@@ -130,8 +127,12 @@
 /* Define if we want to support fixed-function OpenGL rendering. */
 #cmakedefine SUPPORT_FIXED_FUNCTION
 
-/* Define for either of the alternative malloc schemes. */
+/* Define if we have mimalloc available. */
+#cmakedefine HAVE_MIMALLOC
+
+/* Define for one of the alternative malloc schemes. */
 #cmakedefine USE_MEMORY_DLMALLOC
+#cmakedefine USE_MEMORY_MIMALLOC
 #cmakedefine USE_MEMORY_PTMALLOC2
 
 /* Define if we want to compile in support for pipelining.  */
@@ -177,15 +178,8 @@
 /* Define if getopt appears in getopt.h.  */
 #cmakedefine PHAVE_GETOPT_H
 
-/* Do the system headers define key ios typedefs like ios::openmode
-   and ios::fmtflags? */
-#cmakedefine HAVE_IOS_TYPEDEFS
-
 /* Define if you have the <io.h> header file.  */
 #cmakedefine PHAVE_IO_H
-
-/* Define if you have the <iostream> header file.  */
-#cmakedefine PHAVE_IOSTREAM
 
 /* Define if you have the <malloc.h> header file.  */
 #cmakedefine PHAVE_MALLOC_H
@@ -202,17 +196,8 @@
 /* Define if you have the <string.h> header file.  */
 #cmakedefine PHAVE_STRING_H
 
-/* Define if you have the <stdlib.h> header file.  */
-#cmakedefine PHAVE_STDLIB_H
-
 /* Define if you have the <limits.h> header file.  */
 #cmakedefine PHAVE_LIMITS_H
-
-/* Define if you have the <sstream> header file.  */
-#cmakedefine PHAVE_SSTREAM
-
-/* Define if you have the <new> header file.  */
-#cmakedefine PHAVE_NEW
 
 /* Define if you have the <sys/types.h> header file.  */
 #cmakedefine PHAVE_SYS_TYPES_H
@@ -225,9 +210,6 @@
 
 /* Do we have <linux/input.h> ? This enables us to use raw mouse input. */
 #cmakedefine PHAVE_LINUX_INPUT_H
-
-/* Do we have <stdint.h>? */
-#cmakedefine PHAVE_STDINT_H
 
 /* Do we have Posix threads? */
 #cmakedefine HAVE_POSIX_THREADS

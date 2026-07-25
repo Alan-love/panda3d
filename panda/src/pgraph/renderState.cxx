@@ -74,7 +74,6 @@ RenderState() :
   _saved_entry = -1;
   _last_mi = -1;
   _cache_stats.add_num_states(1);
-  _read_overrides = nullptr;
   _generated_shader = nullptr;
 
 #ifdef DO_MEMORY_USAGE
@@ -99,7 +98,6 @@ RenderState(const RenderState &copy) :
   _saved_entry = -1;
   _last_mi = -1;
   _cache_stats.add_num_states(1);
-  _read_overrides = nullptr;
   _generated_shader = nullptr;
 
 #ifdef DO_MEMORY_USAGE
@@ -116,8 +114,6 @@ RenderState::
   // We'd better not call the destructor twice on a particular object.
   nassertv(!is_destructing());
   set_destructing();
-
-  LightReMutexHolder holder(*_states_lock);
 
   // unref() should have cleared these.
   nassertv(_saved_entry == -1);
@@ -1289,8 +1285,8 @@ return_unique(RenderState *state) {
   LightReMutexHolder holder(*_states_lock);
 
   if (state->_saved_entry != -1) {
-    // This state is already in the cache.  nassertr(_states.find(state) ==
-    // state->_saved_entry, pt_state);
+    // This state is already in the cache.
+    //nassertr(_states.find(state) == state->_saved_entry, pt_state);
     return state;
   }
 
@@ -1302,7 +1298,7 @@ return_unique(RenderState *state) {
     while (slot >= 0) {
       Attribute &attrib = state->_attributes[slot];
       nassertd(attrib._attrib != nullptr) continue;
-      attrib._attrib = attrib._attrib->get_unique();
+      attrib._attrib = RenderAttrib::do_uniquify(attrib._attrib);
       mask.clear_bit(slot);
       slot = mask.get_lowest_on_bit();
     }
@@ -1843,13 +1839,15 @@ init_states() {
   // _states_lock without a startup race condition.  For the meantime, this is
   // OK because we guarantee that this method is called at static init time,
   // presumably when there is still only one thread in the world.
-  _states_lock = new LightReMutex("RenderState::_states_lock");
+  alignas(LightReMutex) static char storage[sizeof(LightReMutex)];
+  _states_lock = new (storage) LightReMutex("RenderState::_states_lock");
   _cache_stats.init();
   nassertv(Thread::get_current_thread() == Thread::get_main_thread());
 
   // Initialize the empty state object as well.  It is used so often that it
   // is declared globally, and lives forever.
-  RenderState *state = new RenderState;
+  alignas(RenderState) static char state_storage[sizeof(RenderState)];
+  RenderState *state = new (state_storage) RenderState;
   state->local_object();
   state->cache_ref_only();
   state->_saved_entry = _states.store(state, nullptr);
@@ -1899,11 +1897,12 @@ int RenderState::
 complete_pointers(TypedWritable **p_list, BamReader *manager) {
   int pi = TypedWritable::complete_pointers(p_list, manager);
 
-  int num_attribs = 0;
+  BamAuxData *aux = (BamAuxData *)manager->get_aux_data(this, "overrides");
+  nassertr(aux != nullptr, pi);
 
   RenderAttribRegistry *reg = RenderAttribRegistry::quick_get_global_ptr();
-  for (size_t i = 0; i < (*_read_overrides).size(); ++i) {
-    int override = (*_read_overrides)[i];
+  for (size_t i = 0; i < aux->_overrides.size(); ++i) {
+    int override = aux->_overrides[i];
 
     RenderAttrib *attrib = DCAST(RenderAttrib, p_list[pi++]);
     if (attrib != nullptr) {
@@ -1911,13 +1910,9 @@ complete_pointers(TypedWritable **p_list, BamReader *manager) {
       if (slot > 0 && slot < reg->get_max_slots()) {
         _attributes[slot].set(attrib, override);
         _filled_slots.set_bit(slot);
-        ++num_attribs;
       }
     }
   }
-
-  delete _read_overrides;
-  _read_overrides = nullptr;
 
   return pi;
 }
@@ -1975,15 +1970,19 @@ finalize(BamReader *) {
  */
 TypedWritable *RenderState::
 make_from_bam(const FactoryParams &params) {
-  RenderState *state = new RenderState;
   DatagramIterator scan;
   BamReader *manager;
 
   parse_params(params, scan, manager);
-  state->fillin(scan, manager);
-  manager->register_change_this(change_this, state);
 
-  return state;
+  if (scan.peek_uint16() != 0) {
+    RenderState *state = new RenderState;
+    state->fillin(scan, manager);
+    manager->register_change_this(change_this, state);
+    return state;
+  } else {
+    return (TypedWritable *)_empty_state;
+  }
 }
 
 /**
@@ -1995,12 +1994,15 @@ fillin(DatagramIterator &scan, BamReader *manager) {
   TypedWritable::fillin(scan, manager);
 
   int num_attribs = scan.get_uint16();
-  _read_overrides = new vector_int;
-  (*_read_overrides).reserve(num_attribs);
+
+  BamAuxData *aux_data = new BamAuxData;
+  aux_data->_overrides.reserve(num_attribs);
 
   for (int i = 0; i < num_attribs; ++i) {
     manager->read_pointer(scan);
     int override = scan.get_int32();
-    (*_read_overrides).push_back(override);
+    aux_data->_overrides.push_back(override);
   }
+
+  manager->set_aux_data(this, "overrides", aux_data);
 }

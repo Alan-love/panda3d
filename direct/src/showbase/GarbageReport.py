@@ -1,5 +1,7 @@
 """Contains utility classes for debugging memory leaks."""
 
+from __future__ import annotations
+
 __all__ = ['FakeObject', '_createGarbage', 'GarbageReport', 'GarbageLogger']
 
 from direct.directnotify.DirectNotifyGlobal import directNotify
@@ -8,9 +10,9 @@ from direct.showbase.PythonUtil import itype, deeptype, fastRepr
 from direct.showbase.Job import Job
 from direct.showbase.JobManagerGlobal import jobMgr
 from direct.showbase.MessengerGlobal import messenger
-import direct.showbase.DConfig as config
+from panda3d.core import ConfigVariableBool
 import gc
-import types
+from collections.abc import Callable
 
 GarbageCycleCountAnnounceEvent = 'announceGarbageCycleDesc2num'
 
@@ -18,9 +20,11 @@ GarbageCycleCountAnnounceEvent = 'announceGarbageCycleDesc2num'
 class FakeObject:
     pass
 
+
 class FakeDelObject:
     def __del__(self):
         pass
+
 
 def _createGarbage(num=1):
     for i in range(num):
@@ -33,15 +37,28 @@ def _createGarbage(num=1):
         a.other = b
         b.other = a
 
+
 class GarbageReport(Job):
     """Detects leaked Python objects (via gc.collect()) and reports on garbage
     items, garbage-to-garbage references, and garbage cycles.
     If you just want to dump the report to the log, use GarbageLogger."""
     notify = directNotify.newCategory("GarbageReport")
 
-    def __init__(self, name, log=True, verbose=False, fullReport=False, findCycles=True,
-                 threaded=False, doneCallback=None, autoDestroy=False, priority=None,
-                 safeMode=False, delOnly=False, collect=True):
+    def __init__(
+        self,
+        name: str,
+        log: bool = True,
+        verbose: bool = False,
+        fullReport: bool = False,
+        findCycles: bool = True,
+        threaded: bool = False,
+        doneCallback: Callable[[GarbageReport], object] | None = None,
+        autoDestroy: bool = False,
+        priority: int | None = None,
+        safeMode: bool = False,
+        delOnly: bool = False,
+        collect: bool = True
+    ) -> None:
         # if autoDestroy is True, GarbageReport will self-destroy after logging
         # if false, caller is responsible for calling destroy()
         # if threaded is True, processing will be performed over multiple frames
@@ -213,7 +230,7 @@ class GarbageReport(Job):
                     startIndex = 0
                     # + 1 to include a reference back to the first object
                     endIndex = numObjs + 1
-                    if type(objs[-1]) is types.InstanceType and type(objs[0]) is dict:
+                    if type(objs[0]) is dict and hasattr(objs[-1], '__dict__'):
                         startIndex -= 1
                         endIndex -= 1
 
@@ -222,7 +239,7 @@ class GarbageReport(Job):
                             numToSkip -= 1
                             continue
                         obj = objs[index]
-                        if type(obj) is types.InstanceType:
+                        if hasattr(obj, '__dict__'):
                             if not objAlreadyRepresented:
                                 cycleBySyntax += '%s' % obj.__class__.__name__
                             cycleBySyntax += '.'
@@ -253,7 +270,7 @@ class GarbageReport(Job):
                             brackets = {
                                 tuple: '()',
                                 list: '[]',
-                                }[type(obj)]
+                            }[type(obj)]
                             # get object being referenced by container
                             nextObj = objs[index+1]
                             cycleBySyntax += brackets[0]
@@ -292,8 +309,7 @@ class GarbageReport(Job):
             if self._args.fullReport:
                 garbageIndices = range(self.numGarbage)
             else:
-                garbageIndices = list(self.cycleIds)
-                garbageIndices.sort()
+                garbageIndices = sorted(self.cycleIds)
             numGarbage = len(garbageIndices)
 
             # log each individual item with a number in front of it
@@ -307,8 +323,7 @@ class GarbageReport(Job):
             while n > 0:
                 yield None
                 digits += 1
-                n /= 10
-            digits = digits
+                n = n // 10
             format = '%0' + '%s' % digits + 'i:%s \t%s'
 
             for i in range(numGarbage):
@@ -399,7 +414,7 @@ class GarbageReport(Job):
         if self._args.autoDestroy:
             self.destroy()
 
-    def destroy(self):
+    def destroy(self) -> None:
         #print 'GarbageReport.destroy'
         del self._args
         del self.garbage
@@ -417,13 +432,13 @@ class GarbageReport(Job):
             del self._reportStr
         Job.destroy(self)
 
-    def getNumCycles(self):
+    def getNumCycles(self) -> int:
         # if the job hasn't run yet, we don't have a numCycles yet
         return self.numCycles
 
-    def getDesc2numDict(self):
+    def getDesc2numDict(self) -> dict[str, int]:
         # dict of python-syntax leak -> number of that type of leak
-        desc2num = {}
+        desc2num: dict[str, int] = {}
         for cycleBySyntax in self.cyclesBySyntax:
             desc2num.setdefault(cycleBySyntax, 0)
             desc2num[cycleBySyntax] += 1
@@ -546,23 +561,27 @@ class GarbageReport(Job):
                     break
         yield cycles
 
+
 class GarbageLogger(GarbageReport):
     """If you just want to log the current garbage to the log file, make
     one of these. It automatically destroys itself after logging"""
+
     def __init__(self, name, *args, **kArgs):
         kArgs['log'] = True
         kArgs['autoDestroy'] = True
         GarbageReport.__init__(self, name, *args, **kArgs)
+
 
 class _CFGLGlobals:
     # for checkForGarbageLeaks
     LastNumGarbage = 0
     LastNumCycles = 0
 
-def checkForGarbageLeaks():
+
+def checkForGarbageLeaks() -> int:
     gc.collect()
     numGarbage = len(gc.garbage)
-    if numGarbage > 0 and config.GetBool('auto-garbage-logging', 0):
+    if numGarbage > 0 and ConfigVariableBool('auto-garbage-logging', False):
         if numGarbage != _CFGLGlobals.LastNumGarbage:
             print("")
             gr = GarbageReport('found garbage', threaded=False, collect=False)
@@ -572,14 +591,17 @@ def checkForGarbageLeaks():
             messenger.send(GarbageCycleCountAnnounceEvent, [gr.getDesc2numDict()])
             gr.destroy()
         notify = directNotify.newCategory("GarbageDetect")
-        if config.GetBool('allow-garbage-cycles', 1):
+        func: Callable[[str], object]
+        if ConfigVariableBool('allow-garbage-cycles', True):
             func = notify.warning
         else:
             func = notify.error
         func('%s garbage cycles found, see info above' % _CFGLGlobals.LastNumCycles)
     return numGarbage
 
-def b_checkForGarbageLeaks(wantReply=False):
+
+def b_checkForGarbageLeaks(wantReply: bool = False) -> int:
+    from direct.showbase.ShowBaseGlobal import base, __dev__
     if not __dev__:
         return 0
     # does a garbage collect on the client and the AI
@@ -587,10 +609,10 @@ def b_checkForGarbageLeaks(wantReply=False):
     # logs leak info and terminates (if configured to do so)
     try:
         # if this is the client, tell the AI to check for leaks too
-        base.cr.timeManager
-    except:
+        base.cr.timeManager  # type: ignore[attr-defined]
+    except Exception:
         pass
     else:
-        if base.cr.timeManager:
-            base.cr.timeManager.d_checkForGarbageLeaks(wantReply=wantReply)
+        if base.cr.timeManager:  # type: ignore[attr-defined]
+            base.cr.timeManager.d_checkForGarbageLeaks(wantReply=wantReply)  # type: ignore[attr-defined]
     return checkForGarbageLeaks()

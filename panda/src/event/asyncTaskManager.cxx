@@ -32,8 +32,8 @@ TypeHandle AsyncTaskManager::_type_handle;
  *
  */
 AsyncTaskManager::
-AsyncTaskManager(const string &name) :
-  Namable(name),
+AsyncTaskManager(std::string name) :
+  Namable(std::move(name)),
   _lock("AsyncTaskManager::_lock"),
   _num_tasks(0),
   _clock(ClockObject::get_global_clock()),
@@ -126,9 +126,20 @@ get_task_chain(int n) const {
  * it instead.
  */
 AsyncTaskChain *AsyncTaskManager::
-make_task_chain(const string &name) {
+make_task_chain(std::string name) {
   MutexHolder holder(_lock);
-  return do_make_task_chain(name);
+  return do_make_task_chain(std::move(name));
+}
+
+/**
+ * Creates a new threaded AsyncTaskChain of the indicated name and stores it
+ * within the AsyncTaskManager.  If a task chain with this name already exists,
+ * returns it instead.
+ */
+AsyncTaskChain *AsyncTaskManager::
+make_task_chain(std::string name, int num_threads, ThreadPriority thread_priority) {
+  MutexHolder holder(_lock);
+  return do_make_task_chain(std::move(name), num_threads, thread_priority);
 }
 
 /**
@@ -136,9 +147,9 @@ make_task_chain(const string &name) {
  * exists, or NULL otherwise.
  */
 AsyncTaskChain *AsyncTaskManager::
-find_task_chain(const string &name) {
+find_task_chain(std::string name) {
   MutexHolder holder(_lock);
-  return do_find_task_chain(name);
+  return do_find_task_chain(std::move(name));
 }
 
 /**
@@ -148,10 +159,10 @@ find_task_chain(const string &name) {
  * Returns true if successful, or false if the chain did not exist.
  */
 bool AsyncTaskManager::
-remove_task_chain(const string &name) {
+remove_task_chain(std::string name) {
   MutexHolder holder(_lock);
 
-  PT(AsyncTaskChain) chain = new AsyncTaskChain(this, name);
+  PT(AsyncTaskChain) chain = new AsyncTaskChain(this, std::move(name));
   TaskChains::iterator tci = _task_chains.find(chain);
   if (tci == _task_chains.end()) {
     // No chain.
@@ -163,7 +174,7 @@ remove_task_chain(const string &name) {
   while (chain->_num_tasks != 0) {
     // Still has tasks.
     task_cat.info()
-      << "Waiting for tasks on chain " << name << " to finish.\n";
+      << "Waiting for tasks on chain " << chain->get_name() << " to finish.\n";
     chain->do_wait_for_tasks();
   }
 
@@ -250,12 +261,12 @@ has_task(AsyncTask *task) const {
  * arbitrarily.
  */
 AsyncTask *AsyncTaskManager::
-find_task(const string &name) const {
-  AsyncTask sample_task(name);
+find_task(std::string name) const {
+  AsyncTask sample_task(std::move(name));
   sample_task.local_object();
 
   TasksByName::const_iterator tbni = _tasks_by_name.lower_bound(&sample_task);
-  if (tbni != _tasks_by_name.end() && (*tbni)->get_name() == name) {
+  if (tbni != _tasks_by_name.end() && (*tbni)->get_name() == sample_task.get_name()) {
     return (*tbni);
   }
 
@@ -266,13 +277,13 @@ find_task(const string &name) const {
  * Returns the list of tasks found with the indicated name.
  */
 AsyncTaskCollection AsyncTaskManager::
-find_tasks(const string &name) const {
-  AsyncTask sample_task(name);
+find_tasks(std::string name) const {
+  AsyncTask sample_task(std::move(name));
   sample_task.local_object();
 
   TasksByName::const_iterator tbni = _tasks_by_name.lower_bound(&sample_task);
   AsyncTaskCollection result;
-  while (tbni != _tasks_by_name.end() && (*tbni)->get_name() == name) {
+  while (tbni != _tasks_by_name.end() && (*tbni)->get_name() == sample_task.get_name()) {
     result.add_task(*tbni);
     ++tbni;
   }
@@ -562,8 +573,8 @@ write(std::ostream &out, int indent_level) const {
  * Assumes the lock is held.
  */
 AsyncTaskChain *AsyncTaskManager::
-do_make_task_chain(const string &name) {
-  PT(AsyncTaskChain) chain = new AsyncTaskChain(this, name);
+do_make_task_chain(std::string name, int num_threads, ThreadPriority thread_priority) {
+  PT(AsyncTaskChain) chain = new AsyncTaskChain(this, std::move(name), num_threads, thread_priority);
 
   TaskChains::const_iterator tci = _task_chains.insert(chain).first;
   return (*tci);
@@ -576,8 +587,8 @@ do_make_task_chain(const string &name) {
  * Assumes the lock is held.
  */
 AsyncTaskChain *AsyncTaskManager::
-do_find_task_chain(const string &name) {
-  PT(AsyncTaskChain) chain = new AsyncTaskChain(this, name);
+do_find_task_chain(std::string name) {
+  PT(AsyncTaskChain) chain = new AsyncTaskChain(this, std::move(name));
 
   TaskChains::const_iterator tci = _task_chains.find(chain);
   if (tci != _task_chains.end()) {
@@ -649,7 +660,19 @@ void AsyncTaskManager::
 make_global_ptr() {
   nassertv(_global_ptr == nullptr);
 
-  init_memory_hook();
   _global_ptr = new AsyncTaskManager("TaskManager");
   _global_ptr->ref();
 }
+
+#ifdef __EMSCRIPTEN__
+
+extern "C" void task_manager_poll();
+
+void task_manager_poll() {
+  AsyncTaskManager *mgr = AsyncTaskManager::get_global_ptr();
+  nassertv_always(mgr != NULL);
+
+  mgr->poll();
+}
+
+#endif

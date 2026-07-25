@@ -21,6 +21,7 @@
 #include "configVariableManager.h"
 #include "vector_string.h"
 #include "pset.h"
+#include "memoryBase.h"
 
 // Use this macro to wrap around a description passed to a ConfigVariable
 // constructor.  This allows the description to be completely compiled out, so
@@ -42,11 +43,11 @@
  * and/or ConfigDeclaration, more or less duplicating the interface presented
  * there.
  */
-class EXPCL_DTOOL_PRC ConfigVariableBase : public ConfigFlags {
+class EXPCL_DTOOL_PRC ConfigVariableBase : public ConfigFlags, public MemoryBase {
 protected:
-  INLINE ConfigVariableBase(const std::string &name, ValueType type);
-  ConfigVariableBase(const std::string &name, ValueType type,
-                     const std::string &description, int flags);
+  INLINE ConfigVariableBase(std::string_view name, ValueType type);
+  ConfigVariableBase(std::string_view name, ValueType type,
+                     std::string_view description, int flags);
   INLINE ~ConfigVariableBase();
 
 PUBLISHED:

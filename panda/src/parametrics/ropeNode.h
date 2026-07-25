@@ -15,6 +15,7 @@
 #define ROPENODE_H
 
 #include "pandabase.h"
+#include "memoryBase.h"
 #include "nurbsCurveEvaluator.h"
 #include "pandaNode.h"
 #include "pStatCollector.h"
@@ -33,7 +34,7 @@ class GeomVertexData;
  */
 class EXPCL_PANDA_PARAMETRICS RopeNode : public PandaNode {
 PUBLISHED:
-  explicit RopeNode(const std::string &name);
+  explicit RopeNode(std::string name);
 
 protected:
   RopeNode(const RopeNode &copy);
@@ -45,7 +46,6 @@ public:
 
   virtual bool safe_to_transform() const;
   virtual bool cull_callback(CullTraverser *trav, CullTraverserData &data);
-  virtual bool is_renderable() const;
 
 PUBLISHED:
   enum RenderMode {
@@ -174,7 +174,7 @@ private:
   void render_tube(CullTraverser *trav, CullTraverserData &data,
                    NurbsCurveResult *result) const;
 
-  class CurveVertex {
+  class CurveVertex : public MemoryBase {
   public:
     LPoint3 _p;
     UnalignedLVecBase4 _c;

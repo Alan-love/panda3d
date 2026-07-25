@@ -41,9 +41,7 @@ void Extension<DCClass>::
 set_class_def(PyObject *class_def) {
   PythonClassDefsImpl *defs = do_get_defs();
 
-  Py_XINCREF(class_def);
-  Py_XDECREF(defs->_class_def);
-  defs->_class_def = class_def;
+  Py_XSETREF(defs->_class_def, Py_XNewRef(class_def));
 }
 
 /**
@@ -53,13 +51,11 @@ set_class_def(PyObject *class_def) {
 PyObject *Extension<DCClass>::
 get_class_def() const {
   if (!has_class_def()) {
-    Py_INCREF(Py_None);
-    return Py_None;
+    return Py_NewRef(Py_None);
   }
 
   PythonClassDefsImpl *defs = do_get_defs();
-  Py_INCREF(defs->_class_def);
-  return defs->_class_def;
+  return Py_NewRef(defs->_class_def);
 }
 
 /**
@@ -80,9 +76,7 @@ void Extension<DCClass>::
 set_owner_class_def(PyObject *owner_class_def) {
   PythonClassDefsImpl *defs = do_get_defs();
 
-  Py_XINCREF(owner_class_def);
-  Py_XDECREF(defs->_owner_class_def);
-  defs->_owner_class_def = owner_class_def;
+  Py_XSETREF(defs->_owner_class_def, Py_XNewRef(owner_class_def));
 }
 
 /**
@@ -92,13 +86,11 @@ set_owner_class_def(PyObject *owner_class_def) {
 PyObject *Extension<DCClass>::
 get_owner_class_def() const {
   if (!has_owner_class_def()) {
-    Py_INCREF(Py_None);
-    return Py_None;
+    return Py_NewRef(Py_None);
   }
 
   PythonClassDefsImpl *defs = do_get_defs();
-  Py_INCREF(defs->_owner_class_def);
-  return defs->_owner_class_def;
+  return Py_NewRef(defs->_owner_class_def);
 }
 
 /**
@@ -116,7 +108,7 @@ receive_update(PyObject *distobj, DatagramIterator &di) const {
   int field_id = packer.raw_unpack_uint16();
   DCField *field = _this->get_field_by_index(field_id);
   if (field == nullptr) {
-    ostringstream strm;
+    std::ostringstream strm;
     strm
         << "Received update for field " << field_id << ", not in class "
         << _this->get_name();
@@ -237,7 +229,7 @@ receive_update_other(PyObject *distobj, DatagramIterator &di) const {
  * Processes an update for a named field from a packed value blob.
  */
 void Extension<DCClass>::
-direct_update(PyObject *distobj, const std::string &field_name,
+direct_update(PyObject *distobj, std::string_view field_name,
               const vector_uchar &value_blob) {
   DCField *field = _this->get_field_by_name(field_name);
   nassertv_always(field != nullptr);
@@ -253,7 +245,7 @@ direct_update(PyObject *distobj, const std::string &field_name,
  * Processes an update for a named field from a packed datagram.
  */
 void Extension<DCClass>::
-direct_update(PyObject *distobj, const std::string &field_name,
+direct_update(PyObject *distobj, std::string_view field_name,
               const Datagram &datagram) {
   DCField *field = _this->get_field_by_name(field_name);
   nassertv_always(field != nullptr);
@@ -440,7 +432,7 @@ pack_required_field(DCPacker &packer, PyObject *distobj,
  * the indicated distributed object from the client.
  */
 Datagram Extension<DCClass>::
-client_format_update(const std::string &field_name, DOID_TYPE do_id,
+client_format_update(std::string_view field_name, DOID_TYPE do_id,
                      PyObject *args) const {
   DCField *field = _this->get_field_by_name(field_name);
   if (field == nullptr) {
@@ -459,7 +451,7 @@ client_format_update(const std::string &field_name, DOID_TYPE do_id,
  * the indicated distributed object from the AI.
  */
 Datagram Extension<DCClass>::
-ai_format_update(const std::string &field_name, DOID_TYPE do_id,
+ai_format_update(std::string_view field_name, DOID_TYPE do_id,
                  CHANNEL_TYPE to_id, CHANNEL_TYPE from_id, PyObject *args) const {
   DCField *field = _this->get_field_by_name(field_name);
   if (field == nullptr) {
@@ -479,7 +471,7 @@ ai_format_update(const std::string &field_name, DOID_TYPE do_id,
  * AI.
  */
 Datagram Extension<DCClass>::
-ai_format_update_msg_type(const std::string &field_name, DOID_TYPE do_id,
+ai_format_update_msg_type(std::string_view field_name, DOID_TYPE do_id,
                           CHANNEL_TYPE to_id, CHANNEL_TYPE from_id,
                           int msg_type, PyObject *args) const {
   DCField *field = _this->get_field_by_name(field_name);
@@ -530,31 +522,35 @@ client_format_generate_CMU(PyObject *distobj, DOID_TYPE do_id,
   }
 
   // Also specify the optional fields.
-  int num_optional_fields = 0;
   if (PyObject_IsTrue(optional_fields)) {
-    num_optional_fields = PySequence_Size(optional_fields);
-  }
-  packer.raw_pack_uint16(num_optional_fields);
+    optional_fields = PySequence_Tuple(optional_fields);
+    Py_ssize_t num_optional_fields = PyTuple_GET_SIZE(optional_fields);
+    packer.raw_pack_uint16(num_optional_fields);
 
-  for (int i = 0; i < num_optional_fields; i++) {
-    PyObject *py_field_name = PySequence_GetItem(optional_fields, i);
-    std::string field_name = PyUnicode_AsUTF8(py_field_name);
-    Py_XDECREF(py_field_name);
+    for (Py_ssize_t i = 0; i < num_optional_fields; i++) {
+      PyObject *py_field_name = PyTuple_GET_ITEM(optional_fields, i);
+      std::string field_name = PyUnicode_AsUTF8(py_field_name);
 
-    DCField *field = _this->get_field_by_name(field_name);
-    if (field == nullptr) {
-      std::ostringstream strm;
-      strm << "No field named " << field_name << " in class " << _this->get_name()
-           << "\n";
-      nassert_raise(strm.str());
-      return Datagram();
+      DCField *field = _this->get_field_by_name(field_name);
+      if (field == nullptr) {
+        std::ostringstream strm;
+        strm << "No field named " << field_name << " in class " << _this->get_name()
+             << "\n";
+        nassert_raise(strm.str());
+        Py_DECREF(optional_fields);
+        return Datagram();
+      }
+      packer.raw_pack_uint16(field->get_number());
+      packer.begin_pack(field);
+      if (!pack_required_field(packer, distobj, field)) {
+        Py_DECREF(optional_fields);
+        return Datagram();
+      }
+      packer.end_pack();
     }
-    packer.raw_pack_uint16(field->get_number());
-    packer.begin_pack(field);
-    if (!pack_required_field(packer, distobj, field)) {
-      return Datagram();
-    }
-    packer.end_pack();
+    Py_DECREF(optional_fields);
+  } else {
+    packer.raw_pack_uint16(0);
   }
 
   return Datagram(packer.get_data(), packer.get_length());
@@ -610,13 +606,13 @@ ai_format_generate(PyObject *distobj, DOID_TYPE do_id,
 
   // Also specify the optional fields.
   if (has_optional_fields) {
-    int num_optional_fields = PySequence_Size(optional_fields);
+    optional_fields = PySequence_Tuple(optional_fields);
+    Py_ssize_t num_optional_fields = PyTuple_GET_SIZE(optional_fields);
     packer.raw_pack_uint16(num_optional_fields);
 
-    for (int i = 0; i < num_optional_fields; ++i) {
-      PyObject *py_field_name = PySequence_GetItem(optional_fields, i);
+    for (Py_ssize_t i = 0; i < num_optional_fields; ++i) {
+      PyObject *py_field_name = PyTuple_GET_ITEM(optional_fields, i);
       std::string field_name = PyUnicode_AsUTF8(py_field_name);
-      Py_XDECREF(py_field_name);
 
       DCField *field = _this->get_field_by_name(field_name);
       if (field == nullptr) {
@@ -624,6 +620,7 @@ ai_format_generate(PyObject *distobj, DOID_TYPE do_id,
         strm << "No field named " << field_name << " in class "
              << _this->get_name() << "\n";
         nassert_raise(strm.str());
+        Py_DECREF(optional_fields);
         return Datagram();
       }
 
@@ -631,10 +628,13 @@ ai_format_generate(PyObject *distobj, DOID_TYPE do_id,
 
       packer.begin_pack(field);
       if (!pack_required_field(packer, distobj, field)) {
+        Py_DECREF(optional_fields);
         return Datagram();
       }
       packer.end_pack();
     }
+
+    Py_DECREF(optional_fields);
   }
 
   return Datagram(packer.get_data(), packer.get_length());

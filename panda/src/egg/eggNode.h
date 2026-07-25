@@ -37,7 +37,7 @@ struct EggLexerState;
  */
 class EXPCL_PANDA_EGG EggNode : public EggNamedObject {
 PUBLISHED:
-  INLINE explicit EggNode(const std::string &name = "");
+  INLINE explicit EggNode(std::string name = "");
   INLINE EggNode(const EggNode &copy);
   INLINE EggNode &operator = (const EggNode &copy);
 
@@ -93,7 +93,7 @@ PUBLISHED:
   void test_under_integrity() const { }
 #endif  // _DEBUG
 
-  EXTENSION(PyObject *__reduce__() const);
+  PY_EXTENSION(PyObject *__reduce__() const);
 
 protected:
   enum UnderFlags {

@@ -73,16 +73,12 @@ operator < (const HashVal &other) const {
  */
 INLINE int HashVal::
 compare_to(const HashVal &other) const {
-  if (_hv[0] != other._hv[0]) {
-    return (int)_hv[0] - (int)other._hv[0];
+  for (int i = 0; i < 4; ++i) {
+    if (_hv[i] != other._hv[i]) {
+      return (_hv[i] < other._hv[i]) ? -1 : 1;
+    }
   }
-  if (_hv[1] != other._hv[1]) {
-    return (int)_hv[1] - (int)other._hv[1];
-  }
-  if (_hv[2] != other._hv[2]) {
-    return (int)_hv[2] - (int)other._hv[2];
-  }
-  return (int)_hv[3] - (int)other._hv[3];
+  return 0;
 }
 
 /**
@@ -164,11 +160,8 @@ read_stream(StreamReader &source) {
   _hv[3] = source.get_uint32();
 }
 
-#ifdef HAVE_OPENSSL
 /**
- * Generates the hash value by hashing the indicated data.  This method is
- * only defined if we have the OpenSSL library (which provides md5
- * functionality) available.
+ * Generates the hash value by hashing the indicated data.
  */
 INLINE void HashVal::
 hash_ramfile(const Ramfile &ramfile) {
@@ -176,25 +169,20 @@ hash_ramfile(const Ramfile &ramfile) {
 }
 
 /**
- * Generates the hash value by hashing the indicated data.  This method is
- * only defined if we have the OpenSSL library (which provides md5
- * functionality) available.
+ * Generates the hash value by hashing the indicated data.
  */
 INLINE void HashVal::
-hash_string(const std::string &data) {
+hash_string(std::string_view data) {
   hash_buffer(data.data(), data.length());
 }
 
 /**
- * Generates the hash value by hashing the indicated data.  This method is
- * only defined if we have the OpenSSL library (which provides md5
- * functionality) available.
+ * Generates the hash value by hashing the indicated data.
  */
 INLINE void HashVal::
 hash_bytes(const vector_uchar &data) {
-  hash_buffer((const char *)&data[0], data.size());
+  hash_buffer((const char *)data.data(), data.size());
 }
-#endif  // HAVE_OPENSSL
 
 /**
  * Converts a single nibble to a hex digit.
@@ -220,6 +208,16 @@ fromhex(char digit) {
   }
 }
 
+/**
+ * Initializes the MD5 state.
+ */
+INLINE void HashVal::
+md5_init() {
+  _hv[0] = 0x67452301;
+  _hv[1] = 0xefcdab89;
+  _hv[2] = 0x98badcfe;
+  _hv[3] = 0x10325476;
+}
 
 INLINE std::ostream &operator << (std::ostream &out, const HashVal &hv) {
   hv.output(out);

@@ -11,17 +11,20 @@ Note that you cannot directly import :data:`~builtins.base` from this module
 since ShowBase may not have been created yet; instead, ShowBase dynamically
 adds itself to this module's scope when instantiated."""
 
-__all__ = []
+__all__ = ()
 
 from .ShowBase import ShowBase, WindowControls # pylint: disable=unused-import
 from direct.directnotify.DirectNotifyGlobal import directNotify, giveNotify # pylint: disable=unused-import
 from panda3d.core import VirtualFileSystem, Notify, ClockObject, PandaSystem
 from panda3d.core import ConfigPageManager, ConfigVariableManager, ConfigVariableBool
 from panda3d.core import NodePath, PGTop
-from . import DConfig as config
+from . import DConfig as config # pylint: disable=unused-import
+from .Loader import Loader
 import warnings
 
-__dev__ = ConfigVariableBool('want-dev', __debug__).value
+__dev__: bool = ConfigVariableBool('want-dev', __debug__).value
+
+base: ShowBase
 
 #: The global instance of the :ref:`virtual-file-system`, as obtained using
 #: :meth:`panda3d.core.VirtualFileSystem.getGlobalPtr()`.
@@ -33,6 +36,7 @@ ostream = Notify.out()
 
 #: The clock object used by default for rendering and animation, obtained using
 #: :meth:`panda3d.core.ClockObject.getGlobalClock()`.
+#: @deprecated Use `base.clock` instead.
 globalClock = ClockObject.getGlobalClock()
 
 #: See :meth:`panda3d.core.ConfigPageManager.getGlobalPtr()`.
@@ -58,6 +62,9 @@ aspect2d = render2d.attachNewNode(PGTop("aspect2d"))
 #: A dummy scene graph that is not being rendered by anything.
 hidden = NodePath("hidden")
 
+#: The global Loader instance for models, textures, etc.
+loader = Loader()
+
 # Set direct notify categories now that we have config
 directNotify.setDconfigLevels()
 
@@ -80,7 +87,7 @@ def inspect(anObject):
 
 
 import builtins
-builtins.inspect = inspect
+builtins.inspect = inspect  # type: ignore[attr-defined]
 
 # this also appears in AIBaseGlobal
 if (not __debug__) and __dev__:

@@ -15,12 +15,19 @@ package org.panda3d.android;
 
 import android.app.NativeActivity;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
+import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
+import android.os.ParcelFileDescriptor;
 import android.widget.Toast;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import dalvik.system.BaseDexClassLoader;
 import org.panda3d.android.NativeIStream;
 import org.panda3d.android.NativeOStream;
+
+import android.util.Log;
 
 /**
  * The entry point for a Panda-based activity.  Loads the Panda libraries and
@@ -74,6 +81,72 @@ public class PandaActivity extends NativeActivity {
         return Thread.currentThread().getName();
     }
 
+    /**
+     * Called by android_native_app_glue to spawn the application thread.
+     * Gets passed a function pointer and a data pointer to pass to it.
+     */
+    protected void spawnAppThread(long ptr, long data) {
+        new Thread(() -> {
+            nativeThreadEntry(ptr, data);
+        }).start();
+    }
+
+    /**
+     * Maps the blob to memory and returns the pointer.
+     */
+    public long mapBlobFromResource(long offset) {
+        int resourceId = 0;
+        try {
+            ActivityInfo ai = getPackageManager().getActivityInfo(
+                    getIntent().getComponent(), PackageManager.GET_META_DATA);
+            if (ai.metaData == null) {
+                Log.e("Panda3D", "Failed to get activity metadata");
+                return 0;
+            }
+            resourceId = ai.metaData.getInt("org.panda3d.android.BLOB_RESOURCE");
+            if (resourceId == 0) {
+                return 0;
+            }
+
+            AssetFileDescriptor afd = getResources().openRawResourceFd(resourceId);
+            ParcelFileDescriptor pfd = afd.getParcelFileDescriptor();
+            long off = afd.getStartOffset() + offset;
+            long len = afd.getLength();
+            return nativeMmap(pfd.getFd(), off, len);
+        } catch (Exception e) {
+            Log.e("Panda3D", "Received exception while trying to map blob: " + e);
+            return 0;
+        }
+    }
+
+    /**
+     * Returns the path to the main native library.
+     */
+    public String getNativeLibraryPath() {
+        String libname = "main";
+        try {
+            ActivityInfo ai = getPackageManager().getActivityInfo(
+                    getIntent().getComponent(), PackageManager.GET_META_DATA);
+            if (ai.metaData != null) {
+                String ln = ai.metaData.getString(META_DATA_LIB_NAME);
+                if (ln != null) libname = ln;
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            throw new RuntimeException("Error getting activity info", e);
+        }
+
+        BaseDexClassLoader classLoader = (BaseDexClassLoader) getClassLoader();
+        return classLoader.findLibrary(libname);
+    }
+
+    /**
+     * Returns the path to some other native library.
+     */
+    public String findLibrary(String libname) {
+        BaseDexClassLoader classLoader = (BaseDexClassLoader)getClassLoader();
+        return classLoader.findLibrary(libname);
+    }
+
     public String getIntentDataPath() {
         Intent intent = getIntent();
         Uri data = intent.getData();
@@ -96,6 +169,21 @@ public class PandaActivity extends NativeActivity {
         return getCacheDir().toString();
     }
 
+    /**
+     * Sets the window title.
+     */
+    public void setWindowTitle(final CharSequence title) {
+        final PandaActivity activity = this;
+        runOnUiThread(new Runnable() {
+            public void run() {
+                activity.setTitle(title);
+            }
+        });
+    }
+
+    /**
+     * Shows a pop-up notification.
+     */
     public void showToast(final String text, final int duration) {
         final PandaActivity activity = this;
         runOnUiThread(new Runnable() {
@@ -107,14 +195,13 @@ public class PandaActivity extends NativeActivity {
     }
 
     static {
-        //System.loadLibrary("gnustl_shared");
-        //System.loadLibrary("p3dtool");
-        //System.loadLibrary("p3dtoolconfig");
-        //System.loadLibrary("pandaexpress");
-        //System.loadLibrary("panda");
-        //System.loadLibrary("p3android");
-        //System.loadLibrary("p3framework");
-        System.loadLibrary("pandaegg");
-        System.loadLibrary("pandagles");
+        // Load this explicitly to initialize the JVM with the thread system.
+        System.loadLibrary("panda");
+
+        // Contains our JNI calls.
+        System.loadLibrary("p3android");
     }
+
+    private static native long nativeMmap(int fd, long off, long len);
+    private static native void nativeThreadEntry(long ptr, long data);
 }

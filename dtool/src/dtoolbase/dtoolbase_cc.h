@@ -35,6 +35,7 @@
 #include <iostream>
 #include <iomanip>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <algorithm>
 
@@ -49,8 +50,6 @@
 // interrogate pass (CPPPARSER isn't defined), this maps to public.
 #define PUBLISHED __published
 
-#define PHAVE_ATOMIC 1
-
 typedef int ios_openmode;
 typedef int ios_fmtflags;
 typedef int ios_iostate;
@@ -58,42 +57,20 @@ typedef int ios_seekdir;
 
 #else  // CPPPARSER
 
-#ifdef PHAVE_IOSTREAM
 #include <iostream>
 #include <fstream>
 #include <iomanip>
-#else
-#include <iostream.h>
-#include <fstream.h>
-#include <iomanip.h>
-#endif
-
-#ifdef PHAVE_SSTREAM
 #include <sstream>
-#else
-#include "fakestringstream.h"
-#endif
-
-#ifdef PHAVE_NEW
 #include <new>
-#endif
-
 #include <string>
+#include <string_view>
 #include <utility>
 #include <algorithm>
 
-#ifndef HAVE_IOS_TYPEDEFS
-typedef int ios_openmode;
-typedef int ios_fmtflags;
-typedef int ios_iostate;
-// Old iostream libraries used ios::seek_dir instead of ios::seekdir.
-typedef ios::seek_dir ios_seekdir;
-#else
 typedef std::ios::openmode ios_openmode;
 typedef std::ios::fmtflags ios_fmtflags;
 typedef std::ios::iostate ios_iostate;
 typedef std::ios::seekdir ios_seekdir;
-#endif
 
 #ifdef _MSC_VER
 #define ALWAYS_INLINE __forceinline
@@ -112,12 +89,9 @@ typedef std::ios::seekdir ios_seekdir;
 #define INLINE inline
 #endif
 
-// Expect that we have access to the <atomic> header.
-#define PHAVE_ATOMIC 1
-
-// Determine the availability of C++11 features.
-#if defined(_MSC_VER) && _MSC_VER < 1900 // Visual Studio 2015
-#error Microsoft Visual C++ 2015 or later is required to compile Panda3D.
+// Determine the availability of C++14 features.
+#if defined(_MSC_VER) && _MSC_VER < 1910 // Visual Studio 2017
+#error Microsoft Visual C++ 2017 or later is required to compile Panda3D.
 #endif
 
 // This is just to support code generated with older versions of interrogate.

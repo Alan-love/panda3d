@@ -16,7 +16,6 @@
 
 #include "pandabase.h"
 
-#include "typedef.h"
 #include "typedObject.h"
 #include "typedWritableReferenceCount.h"
 #include "pointerTo.h"
@@ -40,8 +39,9 @@ PUBLISHED:
   INLINE EventParameter(const TypedReferenceCount *ptr);
   INLINE EventParameter(int value);
   INLINE EventParameter(double value);
-  INLINE EventParameter(const std::string &value);
-  INLINE EventParameter(const std::wstring &value);
+  INLINE EventParameter(std::string value);
+  INLINE EventParameter(std::wstring value);
+  INLINE EventParameter(const vector_uchar &value);
 
   INLINE EventParameter(const EventParameter &copy);
   INLINE EventParameter &operator = (const EventParameter &copy);
@@ -60,6 +60,8 @@ PUBLISHED:
   INLINE std::string get_string_value() const;
   INLINE bool is_wstring() const;
   INLINE std::wstring get_wstring_value() const;
+  INLINE bool is_bytes() const;
+  INLINE vector_uchar get_bytes_value() const;
 
   INLINE bool is_typed_ref_count() const;
   INLINE TypedReferenceCount *get_typed_ref_count_value() const;

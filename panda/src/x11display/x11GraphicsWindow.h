@@ -26,7 +26,7 @@
 class x11GraphicsWindow : public GraphicsWindow {
 public:
   x11GraphicsWindow(GraphicsEngine *engine, GraphicsPipe *pipe,
-                    const std::string &name,
+                    std::string name,
                     const FrameBufferProperties &fb_prop,
                     const WindowProperties &win_prop,
                     int flags,
@@ -34,7 +34,7 @@ public:
                     GraphicsOutput *host);
   virtual ~x11GraphicsWindow();
 
-  virtual MouseData get_pointer(int device) const;
+  virtual PointerData get_pointer(int device) const;
   virtual bool move_pointer(int device, int x, int y);
 
   virtual void clear(Thread *current_thread);
@@ -45,6 +45,8 @@ public:
   virtual void set_properties_now(WindowProperties &properties);
 
   INLINE X11_Window get_xwindow() const;
+
+  void enable_detectable_auto_repeat();
 
 protected:
   virtual void close_window();
@@ -103,11 +105,13 @@ protected:
   PreeditState *_preedit_state = nullptr;
 
   long _event_mask;
-  bool _awaiting_configure;
+  clock_t _awaiting_configure_since;
   bool _dga_mouse_enabled;
   bool _raw_mouse_enabled;
   Bool _override_redirect;
   Atom _wm_delete_window;
+  Atom _net_wm_ping;
+  Atom _net_wm_state;
 
   x11GraphicsPipe::pfn_XRRGetScreenInfo _XRRGetScreenInfo;
   x11GraphicsPipe::pfn_XRRSetScreenConfig _XRRSetScreenConfig;

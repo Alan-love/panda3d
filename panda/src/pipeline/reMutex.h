@@ -28,26 +28,23 @@
  */
 #ifdef DEBUG_THREADS
 class EXPCL_PANDA_PIPELINE ReMutex : public MutexDebug
-#else
+#else // DEBUG_THREADS
 class EXPCL_PANDA_PIPELINE ReMutex : public ReMutexDirect
 #endif  // DEBUG_THREADS
 {
 PUBLISHED:
   INLINE ReMutex();
-public:
-  INLINE explicit ReMutex(const char *name);
-PUBLISHED:
-  INLINE explicit ReMutex(const std::string &name);
+  INLINE explicit ReMutex(std::string_view name);
   ReMutex(const ReMutex &copy) = delete;
   ~ReMutex() = default;
 
   void operator = (const ReMutex &copy) = delete;
 
   EXTENSION(bool acquire(bool blocking=true) const);
-  EXTENSION(bool __enter__());
-  EXTENSION(void __exit__(PyObject *, PyObject *, PyObject *));
+  PY_EXTENSION(bool __enter__());
+  PY_EXTENSION(void __exit__(PyObject *, PyObject *, PyObject *));
 };
 
 #include "reMutex.I"
 
-#endif
+#endif // !REMUTEX_H

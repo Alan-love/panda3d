@@ -22,11 +22,15 @@
  */
 class EXPCL_DTOOL_PRC ConfigVariableBool : public ConfigVariable {
 PUBLISHED:
-  INLINE ConfigVariableBool(const std::string &name);
-  INLINE ConfigVariableBool(const std::string &name, bool default_value,
-                            const std::string &description = std::string(), int flags = 0);
-  INLINE ConfigVariableBool(const std::string &name, const std::string &default_value,
-                            const std::string &description = std::string(), int flags = 0);
+  INLINE explicit ConfigVariableBool(std::string_view name);
+  INLINE explicit ConfigVariableBool(std::string_view name,
+                                     bool default_value,
+                                     std::string_view description = std::string_view(),
+                                     int flags = 0);
+  INLINE explicit ConfigVariableBool(std::string_view name,
+                                     std::string_view default_value,
+                                     std::string_view description = std::string_view(),
+                                     int flags = 0);
 
   INLINE void operator = (bool value);
   ALWAYS_INLINE operator bool () const;
@@ -46,7 +50,7 @@ PUBLISHED:
 private:
   void reload_value() const;
 
-  mutable AtomicAdjust::Integer _local_modified;
+  mutable Modified _local_modified;
   mutable bool _cache;
 };
 

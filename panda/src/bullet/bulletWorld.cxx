@@ -24,8 +24,6 @@
 #include "collideMask.h"
 #include "lightMutexHolder.h"
 
-#define clamp(x, x_min, x_max) std::max(std::min(x, x_max), x_min)
-
 using std::endl;
 using std::istream;
 using std::ostream;
@@ -125,7 +123,7 @@ BulletWorld() {
   // Some prefered settings
   _world->getDispatchInfo().m_enableSPU = true;      // default: true
   _world->getDispatchInfo().m_useContinuous = true;  // default: true
-  _world->getSolverInfo().m_splitImpulse = false;    // default: false
+  _world->getSolverInfo().m_splitImpulse = bullet_split_impulse;
   _world->getSolverInfo().m_numIterations = bullet_solver_iterations;
 }
 
@@ -226,7 +224,7 @@ do_physics(PN_stdfloat dt, int max_substeps, PN_stdfloat stepsize) {
 
   _pstat_physics.start();
 
-  int num_substeps = clamp(int(dt / stepsize), 1, max_substeps);
+  int num_substeps = std::max(std::min(int(dt / stepsize), max_substeps), 1);
 
   // Synchronize Panda to Bullet
   _pstat_p2b.start();
@@ -1064,14 +1062,14 @@ contact_test_pair(PandaNode *node0, PandaNode *node1) const {
 /**
  *
  */
-BulletPersistentManifold *BulletWorld::
+BulletPersistentManifold BulletWorld::
 get_manifold(int idx) const {
   LightMutexHolder holder(get_global_lock());
 
-  nassertr(idx < _dispatcher->getNumManifolds(), nullptr);
+  nassertr(idx < _dispatcher->getNumManifolds(), BulletPersistentManifold(nullptr));
 
   btPersistentManifold *ptr = _dispatcher->getManifoldByIndexInternal(idx);
-  return (ptr) ? new BulletPersistentManifold(ptr) : nullptr;
+  return BulletPersistentManifold(ptr);
 }
 
 /**

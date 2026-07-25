@@ -24,13 +24,15 @@
  */
 class EXPCL_DTOOL_PRC ConfigVariableInt64 : public ConfigVariable {
 PUBLISHED:
-  INLINE ConfigVariableInt64(const std::string &name);
-  INLINE ConfigVariableInt64(const std::string &name, int64_t default_value,
-                             const std::string &description = std::string(),
-                             int flags = 0);
-  INLINE ConfigVariableInt64(const std::string &name, const std::string &default_value,
-                             const std::string &description = std::string(),
-                             int flags = 0);
+  INLINE explicit ConfigVariableInt64(std::string_view name);
+  INLINE explicit ConfigVariableInt64(std::string_view name,
+                                      int64_t default_value,
+                                      std::string_view description = std::string_view(),
+                                      int flags = 0);
+  INLINE explicit ConfigVariableInt64(std::string_view name,
+                                      std::string_view default_value,
+                                      std::string_view description = std::string_view(),
+                                      int flags = 0);
 
   INLINE void operator = (int64_t value);
   INLINE operator int64_t () const;
@@ -53,7 +55,7 @@ private:
   void set_default_value(int64_t default_value);
 
 private:
-  AtomicAdjust::Integer _local_modified;
+  Modified _local_modified;
   int64_t _cache;
 };
 

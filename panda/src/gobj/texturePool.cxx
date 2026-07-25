@@ -30,6 +30,10 @@
 
 #include <algorithm>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 using std::istream;
 using std::ostream;
 using std::string;
@@ -52,7 +56,7 @@ write(ostream &out) {
  * insensitive.
  */
 void TexturePool::
-register_texture_type(MakeTextureFunc *func, const string &extensions) {
+register_texture_type(MakeTextureFunc *func, std::string_view extensions) {
   MutexHolder holder(_lock);
 
   vector_string words;
@@ -157,7 +161,7 @@ get_filter(size_t i) const {
  * extension is not one of the extensions for a texture file.
  */
 TexturePool::MakeTextureFunc *TexturePool::
-get_texture_type(const string &extension) const {
+get_texture_type(std::string_view extension) const {
   MutexHolder holder(_lock);
 
   string c = downcase(extension);
@@ -274,13 +278,69 @@ ns_has_texture(const Filename &orig_filename) {
 }
 
 /**
+ * The nonstatic implementation of get_texture().
+ */
+Texture *TexturePool::
+ns_get_texture(const Filename &orig_filename, int primary_file_num_channels,
+               bool read_mipmaps) {
+  LookupKey key;
+  key._primary_file_num_channels = primary_file_num_channels;
+  {
+    MutexHolder holder(_lock);
+    resolve_filename(key._fullpath, orig_filename, read_mipmaps, LoaderOptions());
+
+    Textures::const_iterator ti;
+    ti = _textures.find(key);
+    if (ti != _textures.end()) {
+      // This texture was previously loaded.
+      Texture *tex = (*ti).second;
+      nassertr(!tex->get_fullpath().empty(), tex);
+      return tex;
+    }
+  }
+
+  return nullptr;
+}
+
+/**
+ * The nonstatic implementation of get_texture().
+ */
+Texture *TexturePool::
+ns_get_texture(const Filename &orig_filename,
+               const Filename &orig_alpha_filename,
+               int primary_file_num_channels,
+               int alpha_file_channel,
+               bool read_mipmaps) {
+  LookupKey key;
+  key._primary_file_num_channels = primary_file_num_channels;
+  key._alpha_file_channel = alpha_file_channel;
+  {
+    MutexHolder holder(_lock);
+    LoaderOptions options;
+    resolve_filename(key._fullpath, orig_filename, read_mipmaps, options);
+    resolve_filename(key._alpha_fullpath, orig_alpha_filename, read_mipmaps, options);
+
+    Textures::const_iterator ti;
+    ti = _textures.find(key);
+    if (ti != _textures.end()) {
+      // This texture was previously loaded.
+      Texture *tex = (*ti).second;
+      nassertr(!tex->get_fullpath().empty(), tex);
+      return tex;
+    }
+  }
+
+  return nullptr;
+}
+
+/**
  * The nonstatic implementation of load_texture().
  */
 Texture *TexturePool::
 ns_load_texture(const Filename &orig_filename, int primary_file_num_channels,
-                bool read_mipmaps, const LoaderOptions &options) {
-  LookupKey key;
-  key._primary_file_num_channels = primary_file_num_channels;
+                bool read_mipmaps, const LoaderOptions &options, const SamplerState &sampler) {
+
+  LookupKey key(Texture::TT_2d_texture, primary_file_num_channels, 0, options, sampler);
   {
     MutexHolder holder(_lock);
     resolve_filename(key._fullpath, orig_filename, read_mipmaps, options);
@@ -428,7 +488,7 @@ ns_load_texture(const Filename &orig_filename, int primary_file_num_channels,
   if (use_filters) {
     tex = post_load(tex);
   }
-
+  apply_texture_attributes(tex, options, sampler);
   return tex;
 }
 
@@ -440,15 +500,13 @@ ns_load_texture(const Filename &orig_filename,
                 const Filename &orig_alpha_filename,
                 int primary_file_num_channels,
                 int alpha_file_channel,
-                bool read_mipmaps, const LoaderOptions &options) {
+                bool read_mipmaps, const LoaderOptions &options, const SamplerState &sampler) {
   if (!_fake_texture_image.empty()) {
     return ns_load_texture(_fake_texture_image, primary_file_num_channels,
-                           read_mipmaps, options);
+                           read_mipmaps, options, sampler);
   }
 
-  LookupKey key;
-  key._primary_file_num_channels = primary_file_num_channels;
-  key._alpha_file_channel = alpha_file_channel;
+  LookupKey key(Texture::TT_2d_texture, primary_file_num_channels, alpha_file_channel, options, sampler);
   {
     MutexHolder holder(_lock);
     resolve_filename(key._fullpath, orig_filename, read_mipmaps, options);
@@ -563,7 +621,7 @@ ns_load_texture(const Filename &orig_filename,
   if (use_filters) {
     tex = post_load(tex);
   }
-
+  apply_texture_attributes(tex, options, sampler);
   return tex;
 }
 
@@ -572,12 +630,11 @@ ns_load_texture(const Filename &orig_filename,
  */
 Texture *TexturePool::
 ns_load_3d_texture(const Filename &filename_pattern,
-                   bool read_mipmaps, const LoaderOptions &options) {
+                   bool read_mipmaps, const LoaderOptions &options, const SamplerState &sampler) {
   Filename orig_filename(filename_pattern);
   orig_filename.set_pattern(true);
 
-  LookupKey key;
-  key._texture_type = Texture::TT_3d_texture;
+  LookupKey key(Texture::TT_3d_texture, 0, 0, options, sampler);
   {
     MutexHolder holder(_lock);
     resolve_filename(key._fullpath, orig_filename, read_mipmaps, options);
@@ -666,6 +723,7 @@ ns_load_3d_texture(const Filename &filename_pattern,
   }
 
   nassertr(!tex->get_fullpath().empty(), tex);
+  apply_texture_attributes(tex, options, sampler);
   return tex;
 }
 
@@ -674,12 +732,11 @@ ns_load_3d_texture(const Filename &filename_pattern,
  */
 Texture *TexturePool::
 ns_load_2d_texture_array(const Filename &filename_pattern,
-                         bool read_mipmaps, const LoaderOptions &options) {
+                         bool read_mipmaps, const LoaderOptions &options, const SamplerState &sampler) {
   Filename orig_filename(filename_pattern);
   orig_filename.set_pattern(true);
 
-  LookupKey key;
-  key._texture_type = Texture::TT_2d_texture_array;
+  LookupKey key(Texture::TT_2d_texture_array, 0, 0, options, sampler);
   {
     MutexHolder holder(_lock);
     resolve_filename(key._fullpath, orig_filename, read_mipmaps, options);
@@ -768,6 +825,7 @@ ns_load_2d_texture_array(const Filename &filename_pattern,
   }
 
   nassertr(!tex->get_fullpath().empty(), tex);
+  apply_texture_attributes(tex, options, sampler);
   return tex;
 }
 
@@ -776,12 +834,11 @@ ns_load_2d_texture_array(const Filename &filename_pattern,
  */
 Texture *TexturePool::
 ns_load_cube_map(const Filename &filename_pattern, bool read_mipmaps,
-                 const LoaderOptions &options) {
+                 const LoaderOptions &options, const SamplerState &sampler) {
   Filename orig_filename(filename_pattern);
   orig_filename.set_pattern(true);
 
-  LookupKey key;
-  key._texture_type = Texture::TT_cube_map;
+  LookupKey key(Texture::TT_cube_map, 0, 0, options, sampler);
   {
     MutexHolder holder(_lock);
     resolve_filename(key._fullpath, orig_filename, read_mipmaps, options);
@@ -870,6 +927,7 @@ ns_load_cube_map(const Filename &filename_pattern, bool read_mipmaps,
   }
 
   nassertr(!tex->get_fullpath().empty(), tex);
+  apply_texture_attributes(tex, options, sampler);
   return tex;
 }
 
@@ -889,6 +947,49 @@ ns_get_normalization_cube_map(int size) {
   }
 
   return _normalization_cube_map;
+}
+
+/**
+ * The texture is loaded, apply any atributes that were sent in with the texture through LoaderOptions
+ * and Sampler State
+ */
+void TexturePool::
+apply_texture_attributes(Texture *tex, const LoaderOptions &options, const SamplerState &sampler) {
+  int format = options.get_texture_format();
+  if (format != 0) {
+    tex->set_format((Texture::Format)format);
+  }
+  else if (options.get_texture_flags() & LoaderOptions::TF_force_srgb) {
+    int num_components = tex->get_num_components();
+    if (num_components == 1) {
+      if (!Texture::has_alpha(tex->get_format())) {
+        tex->set_format(Texture::F_sluminance);
+      }
+    }
+    else if (num_components == 2 && Texture::has_alpha(tex->get_format())) {
+      tex->set_format(Texture::F_sluminance_alpha);
+    }
+    else if (num_components == 3) {
+      tex->set_format(Texture::F_srgb);
+    }
+    else if (num_components == 4) {
+      tex->set_format(Texture::F_srgb_alpha);
+    }
+    else {
+      gobj_cat.warning()
+        << "Unable to enable sRGB format on texture " << tex->get_name()
+        << " with specified format " << tex->get_format() << "\n";
+    }
+  }
+  int compression = options.get_texture_compression();
+  if (compression != 0) {
+    tex->set_compression((Texture::CompressionMode)compression);
+  }
+  int quality = options.get_texture_quality();
+  if (quality != 0) {
+    tex->set_quality_level((Texture::QualityLevel)quality);
+  }
+  tex->set_default_sampler(sampler);
 }
 
 /**
@@ -973,6 +1074,15 @@ ns_release_all_textures() {
 
   // Blow away the cache of resolved relative filenames.
   _relpath_lookup.clear();
+
+#ifdef __EMSCRIPTEN__
+  // Also empty the emscripten preload cache.
+  EM_ASM({
+    if (Module["preloadedImages"]) {
+      Module["preloadedImages"] = {};
+    }
+  });
+#endif
 }
 
 /**
@@ -1054,9 +1164,9 @@ ns_list_contents(ostream &out) const {
  * The nonstatic implementation of find_texture().
  */
 Texture *TexturePool::
-ns_find_texture(const string &name) const {
+ns_find_texture(std::string name) const {
   MutexHolder holder(_lock);
-  GlobPattern glob(name);
+  GlobPattern glob(std::move(name));
 
   Textures::const_iterator ti;
   for (ti = _textures.begin(); ti != _textures.end(); ++ti) {
@@ -1073,10 +1183,10 @@ ns_find_texture(const string &name) const {
  * The nonstatic implementation of find_all_textures().
  */
 TextureCollection TexturePool::
-ns_find_all_textures(const string &name) const {
+ns_find_all_textures(std::string name) const {
   MutexHolder holder(_lock);
   TextureCollection result;
-  GlobPattern glob(name);
+  GlobPattern glob(std::move(name));
 
   Textures::const_iterator ti;
   for (ti = _textures.begin(); ti != _textures.end(); ++ti) {
@@ -1095,7 +1205,7 @@ ns_find_all_textures(const string &name) const {
  * register_texture_type().
  */
 PT(Texture) TexturePool::
-ns_make_texture(const string &extension) const {
+ns_make_texture(std::string_view extension) const {
   MakeTextureFunc *func = get_texture_type(extension);
   if (func != nullptr) {
     return func();

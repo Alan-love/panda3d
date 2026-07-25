@@ -36,8 +36,9 @@
 /**
  *
  */
-class EXPCL_PANDA_PGRAPH ShaderAttrib: public RenderAttrib {
+class EXPCL_PANDA_PGRAPH ShaderAttrib final : public RenderAttrib {
 private:
+  friend class StaticObject<ShaderAttrib>;
   INLINE ShaderAttrib();
   INLINE ShaderAttrib(const ShaderAttrib &copy);
 
@@ -92,12 +93,12 @@ public:
   INLINE CPT(RenderAttrib) set_shader_input(CPT_InternalName id, const LMatrix3 &v, int priority=0) const;
   INLINE CPT(RenderAttrib) set_shader_input(CPT_InternalName id, double n1=0, double n2=0, double n3=0, double n4=1,
                                             int priority=0) const;
-                                            
+
   CPT(RenderAttrib) set_shader_inputs(const pvector<ShaderInput> &inputs) const;
 
 PUBLISHED:
-  EXTENSION(CPT(RenderAttrib) set_shader_input(CPT_InternalName, PyObject *, int priority=0) const);
-  EXTENSION(CPT(RenderAttrib) set_shader_inputs(PyObject *args, PyObject *kwargs) const);
+  PY_EXTENSION(CPT(RenderAttrib) set_shader_input(CPT_InternalName, PyObject *, int priority=0) const);
+  PY_EXTENSION(CPT(RenderAttrib) set_shader_inputs(PyObject *args, PyObject *kwargs) const);
 
   CPT(RenderAttrib) set_instance_count(int instance_count) const;
 
@@ -105,7 +106,7 @@ PUBLISHED:
   CPT(RenderAttrib) clear_flag(int flag) const;
 
   CPT(RenderAttrib) clear_shader_input(const InternalName *id) const;
-  CPT(RenderAttrib) clear_shader_input(const std::string &id) const;
+  CPT(RenderAttrib) clear_shader_input(std::string_view id) const;
 
   CPT(RenderAttrib) clear_all_shader_inputs() const;
 
@@ -114,7 +115,7 @@ PUBLISHED:
 
   const Shader *get_shader() const;
   const ShaderInput &get_shader_input(const InternalName *id) const;
-  const ShaderInput &get_shader_input(const std::string &id) const;
+  const ShaderInput &get_shader_input(std::string_view id) const;
 
   NodePath get_shader_input_nodepath(const InternalName *id) const;
   LVecBase4 get_shader_input_vector(InternalName *id) const;
@@ -179,7 +180,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "ShaderAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 10, new ShaderAttrib);
+    static StaticObject<ShaderAttrib> default_attrib;
+    _attrib_slot = register_slot(_type_handle, 10, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();
@@ -194,4 +196,4 @@ private:
 
 #include "shaderAttrib.I"
 
-#endif  // SHADERATTRIB_H
+#endif  // !SHADERATTRIB_H

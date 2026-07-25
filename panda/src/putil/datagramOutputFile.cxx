@@ -93,7 +93,23 @@ close() {
  * written.
  */
 bool DatagramOutputFile::
-write_header(const std::string &header) {
+write_header(const vector_uchar &header) {
+  nassertr(_out != nullptr, false);
+  nassertr(!_wrote_first_datagram, false);
+
+  _out->write((const char *)header.data(), header.size());
+  thread_consider_yield();
+  return !_out->fail();
+}
+
+/**
+ * Writes a sequence of bytes to the beginning of the datagram file.  This may
+ * be called any number of times after the file has been opened and before the
+ * first datagram is written.  It may not be called once the first datagram is
+ * written.
+ */
+bool DatagramOutputFile::
+write_header(std::string_view header) {
   nassertr(_out != nullptr, false);
   nassertr(!_wrote_first_datagram, false);
 

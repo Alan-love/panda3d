@@ -49,7 +49,7 @@ unlink_data(dGeomID id) {
 }
 
 void OdeTriMeshData::
-print_data(const std::string &marker) {
+print_data(std::string_view marker) {
   if (odetrimeshdata_cat.is_debug()) {
     odetrimeshdata_cat.debug() << get_class_type() << "::print_data(" << marker << ")\n";
     const TriMeshDataMap &data_map = get_tri_mesh_data_map();
@@ -102,7 +102,7 @@ OdeTriMeshData(const NodePath& model, bool use_normals) :
   _num_vertices(0),
   _num_faces(0) {
   if (odetrimeshdata_cat.is_debug()) {
-    odetrimeshdata_cat.debug() << get_type() << "(" << _id << ")" << "\n";
+    odetrimeshdata_cat.debug() << "OdeTriMeshData(" << _id << ")" << "\n";
   }
 
   process_model(model, use_normals);
@@ -142,7 +142,7 @@ OdeTriMeshData(const OdeTriMeshData &other) {
 OdeTriMeshData::
 ~OdeTriMeshData() {
   if (odetrimeshdata_cat.is_debug()) {
-    odetrimeshdata_cat.debug() << "~" << get_type() << "(" << _id << ")" << "\n";
+    odetrimeshdata_cat.debug() << "~OdeTriMeshData(" << _id << ")" << "\n";
   }
   destroy();
   if (_vertices != nullptr) {
@@ -165,7 +165,7 @@ OdeTriMeshData::
 void OdeTriMeshData::
 destroy() {
   if (odetrimeshdata_cat.is_debug()) {
-    odetrimeshdata_cat.debug() << get_type() << "::destroy(" << _id << ")" << "\n";
+    odetrimeshdata_cat.debug() << "OdeTriMeshData::destroy(" << _id << ")" << "\n";
   }
   if (_id != nullptr) {
     dGeomTriMeshDataDestroy(_id);

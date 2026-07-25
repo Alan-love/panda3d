@@ -2,20 +2,15 @@
 
 This is a list of all the people who are contributing financially to Panda3D.  If you'd like to join them, visit [our campaign on OpenCollective](https://opencollective.com/panda3d)!
 
-## Gold Sponsors
-
-![Gold Sponsors](https://opencollective.com/panda3d/tiers/gold-sponsor.svg?avatarHeight=48&width=600)
-
-* [tcdude](https://opencollective.com/tizilogic)
-
 ## Bronze Sponsors
 
-[<img src="https://www.panda3d.org/wp-content/uploads/2021/02/changecrab_logo.png" alt="ChangeCrab" height="48">](https://changecrab.com/) ![Bronze Sponsors](https://opencollective.com/panda3d/tiers/bronze-sponsor.svg?avatarHeight=48&width=600)
+[<img src="https://www.panda3d.org/wp-content/uploads/2024/08/Route4MeLogo1185x300-2-1-1024x259.png" alt="Route4Me" height="48">](https://route4me.com/)
+[<img src="https://www.panda3d.org/wp-content/uploads/2026/01/black-logo-1-e1768931551108.png" alt="TestMu AI" height="48">](https://www.testmu.ai/?utm_source=panda3d&utm_medium=sponsor)
 
-* [Mitchell Stokes](https://opencollective.com/mitchell-stokes)
 * [Daniel Stokes](https://opencollective.com/daniel-stokes)
 * [David Rose](https://opencollective.com/david-rose)
-* [ChangeCrab](https://changecrab.com)
+* [Route4Me](https://route4me.com/)
+* [TestMu AI](https://www.testmu.ai/?utm_source=panda3d&utm_medium=sponsor)
 
 ## Benefactors
 
@@ -24,17 +19,23 @@ This is a list of all the people who are contributing financially to Panda3D.  I
 * Sam Edwards
 * Max Voss
 * Hawkheart
-* Dan Mlodecki
+* Veronica
+* Cody Sevier
+* Marek Alexa
 
 ## Enthusiasts
 
 ![Enthusiasts](https://opencollective.com/panda3d/tiers/enthusiast.svg?avatarHeight=48&width=600)
 
 * Eric Thomson
-* Kyle Roach
 * Brian Lach
-* C0MPU73R
 * Maxwell Dreytser
+* SureBet
+* Gyedo Jeon
+* GameDev JONI
+* Max Rodriguez
+* Jethro Schoppenhorst
+* dabe
 
 ## Backers
 

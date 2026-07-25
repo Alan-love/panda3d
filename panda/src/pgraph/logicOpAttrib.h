@@ -27,7 +27,7 @@ class FactoryParams;
  *
  * @since 1.10.0
  */
-class EXPCL_PANDA_PGRAPH LogicOpAttrib : public RenderAttrib {
+class EXPCL_PANDA_PGRAPH LogicOpAttrib final : public RenderAttrib {
 PUBLISHED:
   enum Operation {
     O_none,  // LogicOp disabled, regular blending occurs.
@@ -50,6 +50,7 @@ PUBLISHED:
   };
 
 private:
+  friend class StaticObject<LogicOpAttrib>;
   INLINE LogicOpAttrib(Operation op);
 
 PUBLISHED:
@@ -95,7 +96,8 @@ public:
     RenderAttrib::init_type();
     register_type(_type_handle, "LogicOpAttrib",
                   RenderAttrib::get_class_type());
-    _attrib_slot = register_slot(_type_handle, 100, new LogicOpAttrib(O_none));
+    static StaticObject<LogicOpAttrib> default_attrib(O_none);
+    _attrib_slot = register_slot(_type_handle, 100, default_attrib);
   }
   virtual TypeHandle get_type() const {
     return get_class_type();

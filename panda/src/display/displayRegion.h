@@ -37,7 +37,7 @@
 #include "cullTraverser.h"
 #include "callbackObject.h"
 #include "luse.h"
-#include "epvector.h"
+#include "small_vector.h"
 
 class GraphicsOutput;
 class GraphicsPipe;
@@ -156,10 +156,10 @@ PUBLISHED:
   virtual void output(std::ostream &out) const;
 
   static Filename make_screenshot_filename(
-    const std::string &prefix = "screenshot");
-  Filename save_screenshot_default(const std::string &prefix = "screenshot");
+    std::string_view prefix = "screenshot");
+  Filename save_screenshot_default(std::string_view prefix = "screenshot");
   bool save_screenshot(
-    const Filename &filename, const std::string &image_comment = "");
+    const Filename &filename, std::string image_comment = "");
   bool get_screenshot(PNMImage &image);
   PT(Texture) get_screenshot();
 
@@ -197,7 +197,7 @@ public:
     LVecBase4i _pixels;
     LVecBase4i _pixels_i;
   };
-  typedef epvector<Region> Regions;
+  typedef small_vector<Region> Regions;
 
 private:
   class CData;

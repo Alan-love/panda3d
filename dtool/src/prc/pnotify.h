@@ -18,7 +18,13 @@
 #include "notifySeverity.h"
 #include <map>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 class NotifyCategory;
+class AndroidLogStream;
+class EmscriptenLogStream;
 
 /**
  * An object that handles general error reporting to the user.  It contains a
@@ -35,7 +41,11 @@ PUBLISHED:
   Notify();
   ~Notify();
 
+#if defined(CPPPARSER) && defined(HAVE_PYTHON)
+  PY_EXTEND(void set_ostream_ptr(PyObject *ostream_ptr, bool delete_later));
+#else // CPPPARSER && HAVE_PYTHON
   void set_ostream_ptr(std::ostream *ostream_ptr, bool delete_later);
+#endif // CPPPARSER && HAVE_PYTHON
   std::ostream *get_ostream_ptr() const;
 
   typedef bool AssertHandler(const char *expression, int line,
@@ -51,26 +61,29 @@ PUBLISHED:
   INLINE void clear_assert_failed();
 
   NotifyCategory *get_top_category();
-  NotifyCategory *get_category(const std::string &basename,
+  NotifyCategory *get_category(std::string_view basename,
                                NotifyCategory *parent_category);
-  NotifyCategory *get_category(const std::string &basename,
-                               const std::string &parent_fullname);
-  NotifyCategory *get_category(const std::string &fullname);
+  NotifyCategory *get_category(std::string_view basename,
+                               std::string_view parent_fullname);
+  NotifyCategory *get_category(std::string_view fullname);
 
+  static std::ostream &out(NotifySeverity severity);
   static std::ostream &out();
   static std::ostream &null();
-  static void write_string(const std::string &str);
+  static void write_string(std::string_view str);
   static Notify *ptr();
 
 public:
   static ios_fmtflags get_literal_flag();
 
-  bool assert_failure(const std::string &expression, int line,
-                      const char *source_file);
-  bool assert_failure(const char *expression, int line,
-                      const char *source_file);
+  static bool assert_failure(const std::string &expression, int line,
+                             const char *source_file);
+  static bool assert_failure(const char *expression, int line,
+                             const char *source_file);
 
-  static NotifySeverity string_severity(const std::string &string);
+  static void write_backtrace(void **trace, int size);
+
+  static NotifySeverity string_severity(std::string_view string);
 
   static void config_initialized();
 
@@ -85,8 +98,14 @@ private:
 
   // This shouldn't be a pmap, since it might be invoked before we initialize
   // the global malloc pointers.
-  typedef std::map<std::string, NotifyCategory *> Categories;
+  typedef std::map<std::string, NotifyCategory *, std::less<>> Categories;
   Categories _categories;
+
+#if defined(ANDROID)
+  std::ostream *_log_streams[NS_fatal + 1];
+#elif defined(__EMSCRIPTEN__)
+  EmscriptenLogStream *_log_streams[NS_fatal + 1];
+#endif
 
   static Notify *_global_ptr;
 };
@@ -152,12 +171,42 @@ private:
 
 #define nassert_raise(message) Notify::write_string(message)
 
+#elif defined(__clang_analyzer__)
+
+// We define these so that clang-tidy can generally assume that assertions will
+// not occur, since we don't really care about things like minor memory leaks
+// on assertion failure.
+
+#define nassertr(condition, return_value) \
+  { \
+    if (!(condition)) { \
+      abort(); \
+      return return_value; \
+    } \
+  }
+
+#define nassertv(condition) \
+  { \
+    if (!(condition)) { \
+      abort(); \
+      return; \
+    } \
+  }
+
+#define nassertd(condition) \
+  if (!(condition))
+
+#define nassertr_always(condition, return_value) nassertr(condition, return_value)
+#define nassertv_always(condition) nassertv(condition)
+
+#define nassert_raise(message) abort()
+
 #else   // NDEBUG
 
 #define nassertr(condition, return_value) \
   { \
     if (_nassert_check(condition)) { \
-      if (Notify::ptr()->assert_failure(#condition, __LINE__, __FILE__)) { \
+      if (Notify::assert_failure(#condition, __LINE__, __FILE__)) { \
         return return_value; \
       } \
     } \
@@ -166,7 +215,7 @@ private:
 #define nassertv(condition) \
   { \
     if (_nassert_check(condition)) { \
-      if (Notify::ptr()->assert_failure(#condition, __LINE__, __FILE__)) { \
+      if (Notify::assert_failure(#condition, __LINE__, __FILE__)) { \
         return; \
       } \
     } \
@@ -174,12 +223,12 @@ private:
 
 #define nassertd(condition) \
   if (_nassert_check(condition) && \
-      Notify::ptr()->assert_failure(#condition, __LINE__, __FILE__))
+      Notify::assert_failure(#condition, __LINE__, __FILE__))
 
 #define nassertr_always(condition, return_value) nassertr(condition, return_value)
 #define nassertv_always(condition) nassertv(condition)
 
-#define nassert_raise(message) Notify::ptr()->assert_failure(message, __LINE__, __FILE__)
+#define nassert_raise(message) Notify::assert_failure(message, __LINE__, __FILE__)
 
 #endif  // NDEBUG
 

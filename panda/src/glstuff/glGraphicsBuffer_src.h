@@ -36,7 +36,7 @@
  * additional bitplanes above and beyond the normal depth,stencil,color.  One
  * can use them to render out multiple textures in a single pass.  Cumulative
  * render-to-texture means that if don't clear the buffer, then the contents
- * of the buffer will be equal to the texture's previous contents.  This alo
+ * of the buffer will be equal to the texture's previous contents.  This also
  * means you can meaningfully share a bitplane between two buffers by binding
  * the same texture to both buffers.
  *
@@ -52,7 +52,7 @@
 class EXPCL_GL CLP(GraphicsBuffer) : public GraphicsBuffer {
 public:
   CLP(GraphicsBuffer)(GraphicsEngine *engine, GraphicsPipe *pipe,
-                      const std::string &name,
+                      std::string name,
                       const FrameBufferProperties &fb_prop,
                       const WindowProperties &win_prop,
                       int flags,
@@ -92,7 +92,7 @@ protected:
                  RenderTexturePlane plane, GLenum attachpoint);
   void bind_slot_multisample(bool rb_resize, Texture **attach,
                  RenderTexturePlane plane, GLenum attachpoint);
-  void attach_tex(int layer, int view, Texture *attach, GLenum attachpoint);
+  void attach_tex(GLenum attachpoint, CLP(TextureContext) *gtc, int view, int layer);
   bool check_fbo();
   void generate_mipmaps();
   void rebuild_bitplanes();
@@ -127,6 +127,10 @@ protected:
   // rendering one frame.
   typedef pvector<CLP(TextureContext)*> TextureContexts;
   TextureContexts _texture_contexts;
+
+  // List of textures we need to keep a reference to.
+  typedef pvector<PT(Texture)> Textures;
+  Textures _textures;
 
   // The cube map face we are currently drawing to or have just finished
   // drawing to, or -1 if we are not drawing to a cube map.

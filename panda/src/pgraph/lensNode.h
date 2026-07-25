@@ -20,6 +20,7 @@
 #include "lens.h"
 #include "perspectiveLens.h"
 #include "pointerTo.h"
+#include "small_vector.h"
 
 /**
  * A node that contains a Lens.  The most important example of this kind of
@@ -28,7 +29,7 @@
  */
 class EXPCL_PANDA_PGRAPH LensNode : public PandaNode {
 PUBLISHED:
-  explicit LensNode(const std::string &name, Lens *lens = nullptr);
+  explicit LensNode(std::string name, Lens *lens = nullptr);
 
 protected:
   LensNode(const LensNode &copy);
@@ -67,7 +68,7 @@ protected:
     bool _is_active;
   };
 
-  typedef pvector<LensSlot> Lenses;
+  typedef small_vector<LensSlot> Lenses;
   Lenses _lenses;
 
 public:

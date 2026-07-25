@@ -41,7 +41,7 @@ typedef unsigned char gray;
 struct pixel {
 PUBLISHED:
   pixel() = default;
-  pixel(gray fill) : r(fill), g(fill), b(fill) { }
+  explicit pixel(gray fill) : r(fill), g(fill), b(fill) { }
   pixel(gray r, gray g, gray b) : r(r), g(g), b(b) { }
 
   gray operator [](int i) const { nassertr(i >= 0 && i < 3, 0); return *(&r + i); }
@@ -77,7 +77,7 @@ PUBLISHED:
 
 #ifdef HAVE_PYTHON
   static int size() { return 3; }
-  void output(std::ostream &out) {
+  void output(std::ostream &out) const {
     out << "pixel(r=" << r << ", g=" << g << ", b=" << b << ")";
   }
 #endif
@@ -113,7 +113,7 @@ typedef gray xelval;
 // pnm defines these functions, and it's easier to emulate them than to
 // rewrite the code that calls them.
 EXPCL_PANDA_PNMIMAGE void pm_message(const char *format, ...);
-EXPCL_PANDA_PNMIMAGE void pm_error(const char *format, ...);  // doesn't return.
+EXPCL_PANDA_PNMIMAGE void pm_error [[noreturn]] (const char *format, ...);
 
 EXPCL_PANDA_PNMIMAGE int pm_maxvaltobits(int maxval);
 EXPCL_PANDA_PNMIMAGE int pm_bitstomaxval(int bits);
@@ -133,9 +133,9 @@ EXPCL_PANDA_PNMIMAGE int pm_writelittlelong(std::ostream *out, long l);
 
 // These ratios are used to compute the brightness of a colored pixel; they
 // define the relative contributions of each of the components.
-static const float lumin_red = 0.299f;
-static const float lumin_grn = 0.587f;
-static const float lumin_blu = 0.114f;
+inline constexpr float lumin_red = 0.299f;
+inline constexpr float lumin_grn = 0.587f;
+inline constexpr float lumin_blu = 0.114f;
 
 
 #endif

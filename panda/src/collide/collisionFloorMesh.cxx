@@ -130,7 +130,9 @@ PT(CollisionEntry) CollisionFloorMesh::
 test_intersection_from_ray(const CollisionEntry &entry) const {
   const CollisionRay *ray;
   DCAST_INTO_R(ray, entry.get_from(), nullptr);
-  LPoint3 from_origin = ray->get_origin() * entry.get_wrt_mat();
+
+  CPT(TransformState) wrt_space = entry.get_wrt_space();
+  LPoint3 from_origin = ray->get_origin() * wrt_space->get_mat();
 
   double fx = from_origin[0];
   double fy = from_origin[1];
@@ -195,7 +197,9 @@ PT(CollisionEntry) CollisionFloorMesh::
 test_intersection_from_sphere(const CollisionEntry &entry) const {
   const CollisionSphere *sphere;
   DCAST_INTO_R(sphere, entry.get_from(), nullptr);
-  LPoint3 from_origin = sphere->get_center() * entry.get_wrt_mat();
+
+  CPT(TransformState) wrt_space = entry.get_wrt_space();
+  LPoint3 from_origin = sphere->get_center() * wrt_space->get_mat();
 
   double fx = from_origin[0];
   double fy = from_origin[1];
@@ -386,8 +390,8 @@ fillin(DatagramIterator& scan, BamReader* manager)
 /**
  * Factory method to generate a CollisionPolygon object
  */
-TypedWritable* CollisionFloorMesh::
-make_CollisionFloorMesh(const FactoryParams &params) {
+TypedWritable *CollisionFloorMesh::
+make_from_bam(const FactoryParams &params) {
   CollisionFloorMesh *me = new CollisionFloorMesh;
   DatagramIterator scan;
   BamReader *manager;
@@ -402,9 +406,8 @@ make_CollisionFloorMesh(const FactoryParams &params) {
  */
 void CollisionFloorMesh::
 register_with_read_factory() {
-  BamReader::get_factory()->register_factory(get_class_type(), make_CollisionFloorMesh);
+  BamReader::get_factory()->register_factory(get_class_type(), make_from_bam);
 }
-
 
 /**
  *

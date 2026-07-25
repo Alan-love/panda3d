@@ -19,8 +19,8 @@
 TypeHandle InputDeviceNode::_type_handle;
 
 InputDeviceNode::
-InputDeviceNode(InputDevice *device, const std::string &name) :
-  DataNode(name),
+InputDeviceNode(InputDevice *device, std::string name) :
+  DataNode(std::move(name)),
   _device(device)
 {
   _button_events_output = define_output("button_events", ButtonEventList::get_class_type());
@@ -69,7 +69,7 @@ do_transmit_data(DataGraphTraverser *, const DataNodeTransmit &,
       const ButtonEvent &event = bel->get_event(i);
       if (event._type == ButtonEvent::T_down) {
         _button_states[event._button] = true;
-      } else if (event._type == ButtonEvent::T_down) {
+      } else if (event._type == ButtonEvent::T_up) {
         _button_states[event._button] = false;
       }
     }

@@ -24,12 +24,23 @@
  */
 INLINE_LINMATH std::string Extension<FLOATNAME(LVecBase3)>::
 __repr__() const {
-  std::ostringstream out;
-  out << "LVecBase3" << FLOATTOKEN << "("
-      << MAYBE_ZERO(_this->_v(0)) << ", "
-      << MAYBE_ZERO(_this->_v(1)) << ", "
-      << MAYBE_ZERO(_this->_v(2)) << ")";
-  return out.str();
+  char buf[128] = "LVecBase3";
+  char *p = buf + strlen(buf);
+  *(p++) = FLOATTOKEN;
+  *(p++) = '(';
+  FLOATTYPE_REPR(_this->_v(0), p);
+  p += strlen(p);
+  *(p++) = ',';
+  *(p++) = ' ';
+  FLOATTYPE_REPR(_this->_v(1), p);
+  p += strlen(p);
+  *(p++) = ',';
+  *(p++) = ' ';
+  FLOATTYPE_REPR(_this->_v(2), p);
+  p += strlen(p);
+  *(p++) = ')';
+  *p = '\0';
+  return std::string(buf, p - buf);
 }
 
 /**
@@ -176,7 +187,7 @@ __setattr__(PyObject *self, const std::string &attr_name, PyObject *assign) {
 #endif
       } else {
         PyErr_Format(PyExc_ValueError, "'%.200s' object is not iterable",
-          assign->ob_type->tp_name);
+          Py_TYPE(assign)->tp_name);
       }
       return -1;
     }
@@ -274,8 +285,7 @@ __ifloordiv__(PyObject *self, FLOATTYPE scalar) {
   _this->_v(1) = std::floor(_this->_v(1) / scalar);
   _this->_v(2) = std::floor(_this->_v(2) / scalar);
 #endif
-  Py_INCREF(self);
-  return self;
+  return Py_NewRef(self);
 }
 
 /**
@@ -306,8 +316,7 @@ __ipow__(PyObject *self, FLOATTYPE exponent) {
   _this->_v(0) = cpow(_this->_v(0), exponent);
   _this->_v(1) = cpow(_this->_v(1), exponent);
   _this->_v(2) = cpow(_this->_v(2), exponent);
-  Py_INCREF(self);
-  return self;
+  return Py_NewRef(self);
 }
 
 /**
@@ -370,5 +379,44 @@ __ceil__(PyObject *self) const {
   return py_vec;
 }
 
+/**
+ *
+ */
+INLINE_LINMATH int Extension<FLOATNAME(LVecBase3)>::
+__getbuffer__(PyObject *self, Py_buffer *view, int flags) const {
+  if ((flags & PyBUF_WRITABLE) == PyBUF_WRITABLE) {
+    PyErr_SetString(PyExc_BufferError,
+                    "Object is not writable.");
+    return -1;
+  }
+
+  static const char format[2] = {FLOATTOKEN, 0};
+  static const Py_ssize_t shape = FLOATNAME(LVecBase3)::num_components;
+
+  view->buf = (void *)_this->get_data();
+  view->obj = Py_NewRef(self);
+  view->len = 3 * sizeof(FLOATTYPE);
+  view->readonly = 1;
+  view->itemsize = sizeof(FLOATTYPE);
+  view->format = nullptr;
+  if ((flags & PyBUF_FORMAT) == PyBUF_FORMAT) {
+    view->format = (char *)format;
+  }
+  view->ndim = 1;
+  view->shape = nullptr;
+  if ((flags & PyBUF_ND) == PyBUF_ND) {
+    view->shape = (Py_ssize_t *)&shape;
+  }
+  view->strides = nullptr;
+  if ((flags & PyBUF_STRIDES) == PyBUF_STRIDES) {
+    view->strides = &view->itemsize;
+  }
+  view->suboffsets = nullptr;
+  view->internal = nullptr;
+
+  return 0;
+}
+
 #undef PYNUMBER_FLOATTYPE
 #undef PY_AS_FLOATTYPE
+#undef FLOATTYPE_TO_STR

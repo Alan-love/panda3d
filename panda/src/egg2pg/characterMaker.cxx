@@ -36,10 +36,6 @@
 
 using std::string;
 
-
-
-
-
 /**
  *
  */
@@ -137,7 +133,7 @@ egg_to_index(EggNode *egg_node) const {
  * the character's top node.
  */
 PandaNode *CharacterMaker::
-part_to_node(PartGroup *part, const string &name) const {
+part_to_node(PartGroup *part, std::string_view name) const {
   PandaNode *node = _character_node;
 
   if (part->is_character_joint()) {
@@ -160,7 +156,7 @@ part_to_node(PartGroup *part, const string &name) const {
       return child;
     }
   }
-  PT(GeomNode) geom_node = new GeomNode(name);
+  PT(GeomNode) geom_node = new GeomNode(std::string(name));
   node->add_child(geom_node);
   return geom_node;
 }
@@ -170,11 +166,11 @@ part_to_node(PartGroup *part, const string &name) const {
  * Creates a new morph slider of the given name, and returns its index.
  */
 int CharacterMaker::
-create_slider(const string &name) {
+create_slider(std::string name) {
   if (_morph_root == nullptr) {
     _morph_root = new PartGroup(_bundle, "morph");
   }
-  CharacterSlider *slider = new CharacterSlider(_morph_root, name);
+  CharacterSlider *slider = new CharacterSlider(_morph_root, std::move(name));
   int index = _parts.size();
   _parts.push_back(slider);
   return index;
@@ -184,16 +180,17 @@ create_slider(const string &name) {
  * Returns the VertexSlider corresponding to the indicated egg slider name.
  */
 VertexSlider *CharacterMaker::
-egg_to_slider(const string &name) {
+egg_to_slider(std::string_view name) {
   VertexSliders::iterator vi = _vertex_sliders.find(name);
   if (vi != _vertex_sliders.end()) {
     return (*vi).second;
   }
 
-  int index = create_slider(name);
+  std::string name_str(name);
+  int index = create_slider(name_str);
   PT(VertexSlider) slider =
     new CharacterVertexSlider(DCAST(CharacterSlider, _parts[index]));
-  _vertex_sliders[name] = slider;
+  _vertex_sliders[std::move(name_str)] = slider;
   return slider;
 }
 
@@ -589,16 +586,15 @@ determine_bin_home(EggBin *egg_bin) {
     // ahead and make an implicit node for the joint.
 
     if (egg_group->get_dcs_type() == EggGroup::DC_none) {
-/*
- * Unless the user specifically forbade exposing the joint by putting an
- * explicit "<DCS> { none }" entry in the joint.  In this case, we return NULL
- * to treat the geometry as dynamic (and animate it by animating its
- * vertices), but display lists and vertex buffers will perform better if more
- * geometry is rigid.  There's a tradeoff, though, since the cull traverser
- * will have to do more work with additional transforms in the scene graph,
- * and this may also break up the geometry into more individual pieces, which
- * is the biggest limiting factor on modern PC graphics cards.
- */
+      // Unless the user specifically forbade exposing the joint by putting an
+      // explicit "<DCS> { none }" entry in the joint.  In this case, we return
+      // nullptr to treat the geometry as dynamic (and animate it by animating
+      // its vertices), but display lists and vertex buffers will perform better
+      // if more geometry is rigid.  There's a tradeoff, though, since the cull
+      // traverser will have to do more work with additional transforms in the
+      // scene graph, and this may also break up the geometry into more
+      // individual pieces, which is the biggest limiting factor on modern PC
+      // graphics cards.
       return nullptr;
     }
 

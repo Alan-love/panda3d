@@ -45,11 +45,11 @@ public:
     T_template,
   };
 
-  INLINE XFileDataDef(XFile *x_file, const std::string &name,
+  INLINE XFileDataDef(XFile *x_file, std::string_view name,
                       Type type, XFileTemplate *xtemplate = nullptr);
   virtual ~XFileDataDef();
 
-  virtual void clear();
+  virtual void clear() final;
   void add_array_def(const XFileArrayDef &array_def);
 
   INLINE Type get_data_type() const;

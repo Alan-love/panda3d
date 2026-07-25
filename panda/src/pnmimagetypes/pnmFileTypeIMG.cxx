@@ -85,8 +85,8 @@ get_suggested_extension() const {
  * returns NULL.
  */
 PNMReader *PNMFileTypeIMG::
-make_reader(istream *file, bool owns_file, const string &magic_number) {
-  return new Reader(this, file, owns_file, magic_number);
+make_reader(istream *file, bool owns_file, std::string_view magic_number) {
+  return new Reader(this, file, owns_file, std::string(magic_number));
 }
 
 /**
@@ -315,7 +315,7 @@ write_row(xel *row_data, xelval *) {
 void PNMFileTypeIMG::
 register_with_read_factory() {
   BamReader::get_factory()->
-    register_factory(get_class_type(), make_PNMFileTypeIMG);
+    register_factory(get_class_type(), make_from_bam);
 }
 
 /**
@@ -327,7 +327,7 @@ register_with_read_factory() {
  * we just pull the object from the registry.
  */
 TypedWritable *PNMFileTypeIMG::
-make_PNMFileTypeIMG(const FactoryParams &params) {
+make_from_bam(const FactoryParams &params) {
   return PNMFileTypeRegistry::get_global_ptr()->get_type_by_handle(get_class_type());
 }
 

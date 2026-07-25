@@ -20,7 +20,7 @@
  * truncated (see set_max_width(), etc.).
  */
 INLINE bool PGEntry::
-set_text(const std::string &text) {
+set_text(std::string_view text) {
   LightReMutexHolder holder(_lock);
   TextNode *text_node = get_text_def(S_focus);
   nassertr(text_node != nullptr, false);
@@ -134,7 +134,6 @@ get_cursor_position() const {
 /**
  * Returns the node position x of the cursor
  */
-
 INLINE PN_stdfloat PGEntry::
 get_cursor_X() const {
   LightReMutexHolder holder(_lock);
@@ -144,13 +143,11 @@ get_cursor_X() const {
 /**
  * Returns the node position y of the cursor
  */
-
 INLINE PN_stdfloat PGEntry::
 get_cursor_Y() const {
   LightReMutexHolder holder(_lock);
-  return _cursor_def.get_y();
+  return _cursor_def.get_z();
 }
-
 
 /**
  * Sets the maximum number of characters that may be typed into the entry.
@@ -385,9 +382,9 @@ get_overflow_mode() const {
  * candidate string that the user can actively scroll through.
  */
 INLINE void PGEntry::
-set_candidate_active(const std::string &candidate_active) {
+set_candidate_active(std::string candidate_active) {
   LightReMutexHolder holder(_lock);
-  _candidate_active = candidate_active;
+  _candidate_active = std::move(candidate_active);
 }
 
 /**
@@ -412,9 +409,9 @@ get_candidate_active() const {
  * candidate string that the user is not actively scrolling through.
  */
 INLINE void PGEntry::
-set_candidate_inactive(const std::string &candidate_inactive) {
+set_candidate_inactive(std::string candidate_inactive) {
   LightReMutexHolder holder(_lock);
-  _candidate_inactive = candidate_inactive;
+  _candidate_inactive = std::move(candidate_inactive);
 }
 
 /**
@@ -558,7 +555,7 @@ set_wtext(const std::wstring &wtext) {
     update_text();
   }
 #endif
-  set_cursor_position(std::min(_cursor_position, _text.get_num_characters()));
+  set_cursor_position((std::min)(_cursor_position, _text.get_num_characters()));
   return ret;
 }
 

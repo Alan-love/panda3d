@@ -12,7 +12,8 @@
  */
 
 /**
- * Convenience function; returns true if the named file exists.
+ * Convenience function; returns true if the named file exists in the virtual
+ * file system hierarchy.
  */
 INLINE bool VirtualFileSystem::
 exists(const Filename &filename) const {
@@ -20,8 +21,8 @@ exists(const Filename &filename) const {
 }
 
 /**
- * Convenience function; returns true if the named file exists and is a
- * directory.
+ * Convenience function; returns true if the named file exists as a directory in
+ * the virtual file system hierarchy.
  */
 INLINE bool VirtualFileSystem::
 is_directory(const Filename &filename) const {
@@ -30,8 +31,8 @@ is_directory(const Filename &filename) const {
 }
 
 /**
- * Convenience function; returns true if the named file exists and is a
- * regular file.
+ * Convenience function; returns true if the named file exists as a regular file
+ * in the virtual file system hierarchy.
  */
 INLINE bool VirtualFileSystem::
 is_regular_file(const Filename &filename) const {
@@ -109,7 +110,7 @@ read_file(const Filename &filename, bool auto_unwrap) const {
  * compressed while writing.
  */
 INLINE bool VirtualFileSystem::
-write_file(const Filename &filename, const std::string &data, bool auto_wrap) {
+write_file(const Filename &filename, std::string_view data, bool auto_wrap) {
   return write_file(filename, (const unsigned char *)data.data(), data.size(), auto_wrap);
 }
 

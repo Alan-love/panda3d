@@ -21,7 +21,7 @@
 #include "graphicsWindowProc.h"
 #include "graphicsWindowProcCallbackData.h"
 #include "windowProperties.h"
-#include "mouseData.h"
+#include "pointerData.h"
 #include "modifierButtons.h"
 #include "buttonEvent.h"
 #include "keyboardButton.h"
@@ -41,7 +41,7 @@ class EXPCL_PANDA_DISPLAY GraphicsWindow : public GraphicsOutput {
 protected:
   GraphicsWindow(GraphicsEngine *engine,
                  GraphicsPipe *pipe,
-                 const std::string &name,
+                 std::string name,
                  const FrameBufferProperties &fb_prop,
                  const WindowProperties &win_prop,
                  int flags,
@@ -55,7 +55,9 @@ PUBLISHED:
   const WindowProperties get_requested_properties() const;
   void clear_rejected_properties();
   WindowProperties get_rejected_properties() const;
-  void request_properties(const WindowProperties &requested_properties);
+
+  PY_EXTENSION(void request_properties(PyObject *args, PyObject *kwds));
+
   INLINE bool is_closed() const;
   virtual bool is_active() const;
   INLINE bool is_fullscreen() const;
@@ -65,11 +67,11 @@ PUBLISHED:
   MAKE_PROPERTY(rejected_properties, get_rejected_properties);
   MAKE_PROPERTY(closed, is_closed);
 
-  void set_window_event(const std::string &window_event);
+  void set_window_event(std::string window_event);
   std::string get_window_event() const;
   MAKE_PROPERTY(window_event, get_window_event, set_window_event);
 
-  void set_close_request_event(const std::string &close_request_event);
+  void set_close_request_event(std::string close_request_event);
   std::string get_close_request_event() const;
   MAKE_PROPERTY(close_request_event, get_close_request_event, set_close_request_event);
 
@@ -95,11 +97,13 @@ PUBLISHED:
   /*void enable_pointer_mode(int device, double speed);
   void disable_pointer_mode(int device);*/
 
-  virtual MouseData get_pointer(int device) const;
+  virtual PointerData get_pointer(int device) const;
   virtual bool move_pointer(int device, int x, int y);
   virtual void close_ime();
 
 public:
+  void request_properties(const WindowProperties &requested_properties);
+
   virtual void add_window_proc( const GraphicsWindowProc* wnd_proc_object ){};
   virtual void remove_window_proc( const GraphicsWindowProc* wnd_proc_object ){};
   virtual void clear_window_procs(){};
@@ -121,6 +125,8 @@ public:
   virtual void set_close_now();
   virtual void process_events();
   virtual void set_properties_now(WindowProperties &properties);
+
+  virtual void begin_flip();
 
 protected:
   virtual void close_window();
@@ -148,6 +154,8 @@ protected:
 
   bool _got_expose_event;
 
+  PStatCollector _latency_pcollector;
+
 private:
   LightReMutex _properties_lock;
   // protects _requested_properties, _rejected_properties, and _window_event.
@@ -161,7 +169,7 @@ private:
 #ifdef HAVE_PYTHON
   typedef pset<GraphicsWindowProc*> PythonWinProcClasses;
   PythonWinProcClasses _python_window_proc_classes;
-#endif
+#endif // HAVE_PYTHON
 
 public:
   static TypeHandle get_class_type() {
@@ -186,4 +194,4 @@ private:
 
 #include "graphicsWindow.I"
 
-#endif /* GRAPHICSWINDOW_H */
+#endif // !GRAPHICSWINDOW_H

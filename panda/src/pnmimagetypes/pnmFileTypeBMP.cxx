@@ -87,7 +87,7 @@ has_magic_number() const {
  * otherwise.
  */
 bool PNMFileTypeBMP::
-matches_magic_number(const string &magic_number) const {
+matches_magic_number(std::string_view magic_number) const {
   nassertr(magic_number.size() >= 2, false);
   return (magic_number.substr(0, 2) == "BM");
 }
@@ -98,8 +98,8 @@ matches_magic_number(const string &magic_number) const {
  * returns NULL.
  */
 PNMReader *PNMFileTypeBMP::
-make_reader(std::istream *file, bool owns_file, const string &magic_number) {
-  return new Reader(this, file, owns_file, magic_number);
+make_reader(std::istream *file, bool owns_file, std::string_view magic_number) {
+  return new Reader(this, file, owns_file, std::string(magic_number));
 }
 
 /**
@@ -119,7 +119,7 @@ make_writer(std::ostream *file, bool owns_file) {
 void PNMFileTypeBMP::
 register_with_read_factory() {
   BamReader::get_factory()->
-    register_factory(get_class_type(), make_PNMFileTypeBMP);
+    register_factory(get_class_type(), make_from_bam);
 }
 
 /**
@@ -131,7 +131,7 @@ register_with_read_factory() {
  * we just pull the object from the registry.
  */
 TypedWritable *PNMFileTypeBMP::
-make_PNMFileTypeBMP(const FactoryParams &params) {
+make_from_bam(const FactoryParams &params) {
   return PNMFileTypeRegistry::get_global_ptr()->get_type_by_handle(get_class_type());
 }
 

@@ -42,7 +42,7 @@ class FactoryParams;
  */
 class EXPCL_PANDA_GOBJ Material : public TypedWritableReferenceCount, public Namable {
 PUBLISHED:
-  INLINE explicit Material(const std::string &name = "");
+  INLINE explicit Material(std::string name = "");
   INLINE Material(const Material &copy);
   void operator = (const Material &copy);
   INLINE ~Material();
@@ -170,7 +170,7 @@ public:
   virtual void write_datagram(BamWriter *manager, Datagram &me);
 
 protected:
-  static TypedWritable *make_Material(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
   void fillin(DatagramIterator &scan, BamReader *manager);
 
 public:

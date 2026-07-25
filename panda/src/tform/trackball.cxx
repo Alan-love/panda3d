@@ -16,7 +16,7 @@
 #include "buttonEventList.h"
 #include "dataNodeTransmit.h"
 #include "compose_matrix.h"
-#include "mouseData.h"
+#include "pointerData.h"
 #include "modifierButtons.h"
 #include "linmath_events.h"
 #include "mouseButton.h"
@@ -34,8 +34,8 @@ TypeHandle Trackball::_type_handle;
  *
  */
 Trackball::
-Trackball(const std::string &name) :
-  MouseInterfaceNode(name)
+Trackball(std::string name) :
+  MouseInterfaceNode(std::move(name))
 {
   _pixel_xy_input = define_input("pixel_xy", EventStoreVec2::get_class_type());
 

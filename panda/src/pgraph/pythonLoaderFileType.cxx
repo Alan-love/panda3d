@@ -44,10 +44,9 @@ PythonLoaderFileType() {
 PythonLoaderFileType::
 PythonLoaderFileType(std::string extension, PyObject *entry_point) :
   _extension(std::move(extension)),
-  _entry_point(entry_point) {
+  _entry_point(Py_NewRef(entry_point)) {
 
   init_type();
-  Py_INCREF(entry_point);
 }
 
 /**
@@ -90,26 +89,25 @@ init(PyObject *loader) {
       return false;
     }
 
-    PyObject *sequence = PySequence_Fast(extensions, "extensions must be a sequence");
-    PyObject **items = PySequence_Fast_ITEMS(sequence);
-    Py_ssize_t num_items = PySequence_Fast_GET_SIZE(sequence);
+    PyObject *tuple = PySequence_Tuple(extensions);
+    Py_ssize_t num_items = PyTuple_GET_SIZE(tuple);
     Py_DECREF(extensions);
 
     if (num_items == 0) {
       PyErr_SetString(PyExc_ValueError, "extensions list may not be empty");
-      Py_DECREF(sequence);
+      Py_DECREF(tuple);
       return false;
     }
 
     bool found_extension = false;
 
     for (Py_ssize_t i = 0; i < num_items; ++i) {
-      PyObject *extension = items[i];
+      PyObject *extension = PyTuple_GET_ITEM(tuple, i);
       const char *extension_str;
       Py_ssize_t extension_len;
       extension_str = PyUnicode_AsUTF8AndSize(extension, &extension_len);
       if (extension_str == nullptr) {
-        Py_DECREF(sequence);
+        Py_DECREF(tuple);
         return false;
       }
 
@@ -128,7 +126,7 @@ init(PyObject *loader) {
         }
       }
     }
-    Py_DECREF(sequence);
+    Py_DECREF(tuple);
 
     if (!found_extension) {
       PyObject *repr = PyObject_Repr(loader);
@@ -158,8 +156,12 @@ init(PyObject *loader) {
     }
     Py_DECREF(supports_compressed);
   }
+  else {
+    PyErr_Clear();
+  }
 
   _load_func = PyObject_GetAttrString(loader, "load_file");
+  PyErr_Clear();
   _save_func = PyObject_GetAttrString(loader, "save_file");
   PyErr_Clear();
 
@@ -303,20 +305,19 @@ load_file(const Filename &path, const LoaderOptions &options,
 #endif
 
   // Wrap the arguments.
-  PyObject *args = PyTuple_New(3);
-  PyTuple_SET_ITEM(args, 0, DTool_CreatePyInstance((void *)&path, Dtool_Filename, false, true));
-  PyTuple_SET_ITEM(args, 1, DTool_CreatePyInstance((void *)&options, Dtool_LoaderOptions, false, true));
+  PyObject *args[4];
+  args[1] = DTool_CreatePyInstance((void *)&path, Dtool_Filename, false, true);
+  args[2] = DTool_CreatePyInstance((void *)&options, Dtool_LoaderOptions, false, true);
   if (record != nullptr) {
     record->ref();
-    PyTuple_SET_ITEM(args, 2, DTool_CreatePyInstanceTyped((void *)record, Dtool_BamCacheRecord, true, false, record->get_type_index()));
+    args[3] = DTool_CreatePyInstanceTyped((void *)record, Dtool_BamCacheRecord, true, false, record->get_type_index());
   } else {
-    PyTuple_SET_ITEM(args, 2, Py_None);
-    Py_INCREF(Py_None);
+    args[3] = Py_NewRef(Py_None);
   }
 
   PT(PandaNode) node;
 
-  PyObject *result = PythonThread::call_python_func(_load_func, args);
+  PyObject *result = PythonThread::call_python_func(_load_func, args + 1, 3 | PY_VECTORCALL_ARGUMENTS_OFFSET);
   if (result != nullptr) {
     if (DtoolInstance_Check(result)) {
       node = (PandaNode *)DtoolInstance_UPCAST(result, Dtool_PandaNode);
@@ -324,10 +325,12 @@ load_file(const Filename &path, const LoaderOptions &options,
     Py_DECREF(result);
   }
 
-  Py_DECREF(args);
+  Py_DECREF(args[1]);
+  Py_DECREF(args[2]);
+  Py_DECREF(args[3]);
 
   if (node == nullptr) {
-    PyObject *exc_type = _PyErr_OCCURRED();
+    PyObject *exc_type = PyErr_Occurred();
     if (!exc_type) {
       loader_cat.error()
         << "load_file must return valid PandaNode or raise exception\n";
@@ -371,13 +374,16 @@ save_file(const Filename &path, const LoaderOptions &options,
 #endif
 
   // Wrap the arguments.
-  PyObject *args = PyTuple_New(3);
-  PyTuple_SET_ITEM(args, 0, DTool_CreatePyInstance((void *)&path, Dtool_Filename, false, true));
-  PyTuple_SET_ITEM(args, 1, DTool_CreatePyInstance((void *)&options, Dtool_LoaderOptions, false, true));
-  PyTuple_SET_ITEM(args, 2, DTool_CreatePyInstanceTyped((void *)node, Dtool_PandaNode, true, false, node->get_type_index()));
+  PyObject *args[4];
+  args[1] = DTool_CreatePyInstance((void *)&path, Dtool_Filename, false, true);
+  args[2] = DTool_CreatePyInstance((void *)&options, Dtool_LoaderOptions, false, true);
+  args[3] = DTool_CreatePyInstanceTyped((void *)node, Dtool_PandaNode, true, false, node->get_type_index());
 
-  PyObject *result = PythonThread::call_python_func(_load_func, args);
-  Py_DECREF(args);
+  PyObject *result = PythonThread::call_python_func(_save_func, args + 1, 3 | PY_VECTORCALL_ARGUMENTS_OFFSET);
+  Py_DECREF(args[1]);
+  Py_DECREF(args[2]);
+  Py_DECREF(args[3]);
+
   if (result != nullptr) {
     Py_DECREF(result);
   } else {

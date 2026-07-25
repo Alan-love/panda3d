@@ -52,10 +52,10 @@ class ScissorAttrib;
  */
 class EXPCL_PANDA_PGUI PGItem : public PandaNode {
 PUBLISHED:
-  explicit PGItem(const std::string &name);
+  explicit PGItem(std::string name);
   virtual ~PGItem();
 
-  INLINE void set_name(const std::string &name);
+  INLINE void set_name(std::string name);
 
 protected:
   PGItem(const PGItem &copy);
@@ -65,7 +65,6 @@ protected:
   virtual void draw_mask_changed();
 
   virtual bool cull_callback(CullTraverser *trav, CullTraverserData &data);
-  virtual bool is_renderable() const;
 
   virtual void compute_internal_bounds(CPT(BoundingVolume) &internal_bounds,
                                        int &internal_vertices,
@@ -133,13 +132,14 @@ PUBLISHED:
   bool has_state_def(int state) const;
   INLINE NodePath &get_state_def(int state);
   MAKE_SEQ(get_state_defs, get_num_state_defs, get_state_def);
+  MAKE_SEQ_PROPERTY(state_defs, get_num_state_defs, get_state_def);
   NodePath instance_to_state_def(int state, const NodePath &path);
 
   PGFrameStyle get_frame_style(int state);
   void set_frame_style(int state, const PGFrameStyle &style);
 
   INLINE const std::string &get_id() const;
-  INLINE void set_id(const std::string &id);
+  INLINE void set_id(std::string id);
 
   MAKE_PROPERTY(name, get_name, set_name);
   MAKE_PROPERTY2(frame, has_frame, get_frame, set_frame, clear_frame);
@@ -172,13 +172,24 @@ PUBLISHED:
   INLINE std::string get_release_event(const ButtonHandle &button) const;
   INLINE std::string get_keystroke_event() const;
 
+  MAKE_PROPERTY(enter_prefix, get_enter_prefix);
+  MAKE_PROPERTY(exit_prefix, get_exit_prefix);
+  MAKE_PROPERTY(within_prefix, get_within_prefix);
+  MAKE_PROPERTY(without_prefix, get_without_prefix);
+  MAKE_PROPERTY(focus_in_prefix, get_focus_in_prefix);
+  MAKE_PROPERTY(focus_out_prefix, get_focus_out_prefix);
+  MAKE_PROPERTY(press_prefix, get_press_prefix);
+  MAKE_PROPERTY(repeat_prefix, get_repeat_prefix);
+  MAKE_PROPERTY(release_prefix, get_release_prefix);
+  MAKE_PROPERTY(keystroke_prefix, get_keystroke_prefix);
+
   INLINE LMatrix4 get_frame_inv_xform() const;
 
 #ifdef HAVE_AUDIO
-  void set_sound(const std::string &event, AudioSound *sound);
-  void clear_sound(const std::string &event);
-  AudioSound *get_sound(const std::string &event) const;
-  bool has_sound(const std::string &event) const;
+  void set_sound(std::string_view event, AudioSound *sound);
+  void clear_sound(std::string_view event);
+  AudioSound *get_sound(std::string_view event) const;
+  bool has_sound(std::string_view event) const;
 #endif
 
   static TextNode *get_text_node();
@@ -187,7 +198,7 @@ PUBLISHED:
   INLINE static PGItem *get_focus_item();
 
 protected:
-  void play_sound(const std::string &event);
+  void play_sound(std::string_view event);
 
   void reduce_region(LVecBase4 &clip, PGItem *obscurer) const;
   void reduce_region(LVecBase4 &frame, PN_stdfloat px, PN_stdfloat py) const;
@@ -242,7 +253,7 @@ private:
   StateDefs _state_defs;
 
 #ifdef HAVE_AUDIO
-  typedef pmap<std::string, PT(AudioSound) > Sounds;
+  typedef pmap<std::string, PT(AudioSound), std::less<> > Sounds;
   Sounds _sounds;
 #endif
 

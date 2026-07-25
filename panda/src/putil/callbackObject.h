@@ -16,6 +16,7 @@
 
 #include "pandabase.h"
 #include "typedReferenceCount.h"
+#include "pointerTo.h"
 
 class CallbackData;
 
@@ -34,7 +35,7 @@ public:
 PUBLISHED:
   virtual void output(std::ostream &out) const;
 
-  EXTENSION(static PT(CallbackObject) make(PyObject *function));
+  PY_EXTENSION(static PT(CallbackObject) make(PyObject *function));
 
 public:
   virtual void do_callback(CallbackData *cbdata);
@@ -64,4 +65,4 @@ inline std::ostream &operator << (std::ostream &out, const CallbackObject &cbo) 
 
 #include "callbackObject.I"
 
-#endif
+#endif // !CALLBACKOBJECT_H

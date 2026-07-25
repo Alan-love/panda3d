@@ -28,8 +28,8 @@ TypeHandle EggTexture::_type_handle;
  *
  */
 EggTexture::
-EggTexture(const string &tref_name, const Filename &filename)
-  : EggFilenameNode(tref_name, filename)
+EggTexture(std::string tref_name, const Filename &filename)
+  : EggFilenameNode(std::move(tref_name), filename)
 {
   _texture_type = TT_unspecified;
   _format = F_unspecified;
@@ -504,6 +504,7 @@ has_alpha_channel(int num_components) const {
   case F_green:
   case F_blue:
   case F_luminance:
+  case F_sluminance:
   case F_rgb:
   case F_rgb12:
   case F_rgb8:
@@ -520,6 +521,7 @@ has_alpha_channel(int num_components) const {
 
   case F_luminance_alpha:
   case F_luminance_alphamask:
+  case F_sluminance_alpha:
   case F_rgba:
   case F_rgbm:
   case F_rgba12:
@@ -559,10 +561,10 @@ affects_polygon_alpha() const {
   case ET_height:
   case ET_normal_gloss:
   case ET_emission:
+  case ET_occlusion:
+  case ET_metallic_roughness:
+  case ET_occlusion_metallic_roughness:
     return false;
-
-  case ET_selector:
-    return true;
 
   case ET_unspecified:
     break;
@@ -659,7 +661,7 @@ multitexture_over(EggTexture *other) {
  * TextureType value.
  */
 EggTexture::TextureType EggTexture::
-string_texture_type(const string &string) {
+string_texture_type(std::string_view string) {
   if (cmp_nocase_uh(string, "1d") == 0 ||
       cmp_nocase_uh(string, "1dtexture") == 0 ||
       cmp_nocase_uh(string, "1d_texture") == 0) {
@@ -690,7 +692,7 @@ string_texture_type(const string &string) {
  * or F_unspecified if the string does not match any known Format value.
  */
 EggTexture::Format EggTexture::
-string_format(const string &string) {
+string_format(std::string_view string) {
   if (cmp_nocase_uh(string, "rgba") == 0) {
     return F_rgba;
   } else if (cmp_nocase_uh(string, "srgb_alpha") == 0) {
@@ -732,6 +734,10 @@ string_format(const string &string) {
     return F_luminance_alpha;
   } else if (cmp_nocase_uh(string, "luminance_alphamask") == 0) {
     return F_luminance_alphamask;
+  } else if (cmp_nocase_uh(string, "sluminance") == 0) {
+    return F_sluminance;
+  } else if (cmp_nocase_uh(string, "sluminance_alpha") == 0) {
+    return F_sluminance_alpha;
   } else {
     return F_unspecified;
   }
@@ -743,7 +749,7 @@ string_format(const string &string) {
  * CompressionMode value.
  */
 EggTexture::CompressionMode EggTexture::
-string_compression_mode(const string &string) {
+string_compression_mode(std::string_view string) {
   if (cmp_nocase_uh(string, "off") == 0) {
     return CM_off;
   } else if (cmp_nocase_uh(string, "on") == 0) {
@@ -770,7 +776,7 @@ string_compression_mode(const string &string) {
  * or WM_unspecified if the string does not match any known WrapMode value.
  */
 EggTexture::WrapMode EggTexture::
-string_wrap_mode(const string &string) {
+string_wrap_mode(std::string_view string) {
   if (cmp_nocase_uh(string, "repeat") == 0) {
     return WM_repeat;
   } else if (cmp_nocase_uh(string, "clamp") == 0) {
@@ -792,7 +798,7 @@ string_wrap_mode(const string &string) {
  * FilterType value.
  */
 EggTexture::FilterType EggTexture::
-string_filter_type(const string &string) {
+string_filter_type(std::string_view string) {
   // Old egg filter types.
   if (cmp_nocase_uh(string, "point") == 0) {
     return FT_nearest;
@@ -837,7 +843,7 @@ string_filter_type(const string &string) {
  * or ET_unspecified if the string does not match any known EnvType value.
  */
 EggTexture::EnvType EggTexture::
-string_env_type(const string &string) {
+string_env_type(std::string_view string) {
   if (cmp_nocase_uh(string, "modulate") == 0) {
     return ET_modulate;
 
@@ -877,14 +883,21 @@ string_env_type(const string &string) {
   } else if (cmp_nocase_uh(string, "height") == 0) {
     return ET_height;
 
-  } else if (cmp_nocase_uh(string, "selector") == 0) {
-    return ET_selector;
+  } else if (cmp_nocase_uh(string, "metallic_roughness") == 0 ||
+             cmp_nocase_uh(string, "selector") == 0) {
+    return ET_metallic_roughness;
 
   } else if (cmp_nocase_uh(string, "normal_gloss") == 0) {
     return ET_normal_gloss;
 
   } else if (cmp_nocase_uh(string, "emission") == 0) {
     return ET_emission;
+
+  } else if (cmp_nocase_uh(string, "occlusion") == 0) {
+    return ET_occlusion;
+
+  } else if (cmp_nocase_uh(string, "occlusion_metallic_roughness") == 0) {
+    return ET_occlusion_metallic_roughness;
 
   } else {
     return ET_unspecified;
@@ -897,7 +910,7 @@ string_env_type(const string &string) {
  * CombineMode value.
  */
 EggTexture::CombineMode EggTexture::
-string_combine_mode(const string &string) {
+string_combine_mode(std::string_view string) {
   if (cmp_nocase_uh(string, "replace") == 0) {
     return CM_replace;
 
@@ -933,7 +946,7 @@ string_combine_mode(const string &string) {
  * CombineSource value.
  */
 EggTexture::CombineSource EggTexture::
-string_combine_source(const string &string) {
+string_combine_source(std::string_view string) {
   if (cmp_nocase_uh(string, "texture") == 0) {
     return CS_texture;
 
@@ -963,7 +976,7 @@ string_combine_source(const string &string) {
  * CombineOperand value.
  */
 EggTexture::CombineOperand EggTexture::
-string_combine_operand(const string &string) {
+string_combine_operand(std::string_view string) {
   if (cmp_nocase_uh(string, "src_color") == 0) {
     return CO_src_color;
 
@@ -986,7 +999,7 @@ string_combine_operand(const string &string) {
  * or ET_unspecified if the string does not match any known TexGen value.
  */
 EggTexture::TexGen EggTexture::
-string_tex_gen(const string &string) {
+string_tex_gen(std::string_view string) {
   if (cmp_nocase_uh(string, "unspecified") == 0) {
     return TG_unspecified;
 
@@ -1026,7 +1039,7 @@ string_tex_gen(const string &string) {
  * or ET_unspecified if the string does not match any known TexGen value.
  */
 EggTexture::QualityLevel EggTexture::
-string_quality_level(const string &string) {
+string_quality_level(std::string_view string) {
   if (cmp_nocase_uh(string, "unspecified") == 0) {
     return QL_unspecified;
 
@@ -1179,6 +1192,10 @@ ostream &operator << (ostream &out, EggTexture::Format format) {
     return out << "luminance_alpha";
   case EggTexture::F_luminance_alphamask:
     return out << "luminance_alphamask";
+  case EggTexture::F_sluminance:
+    return out << "sluminance";
+  case EggTexture::F_sluminance_alpha:
+    return out << "sluminance_alpha";
   }
 
   nassertr(false, out);
@@ -1311,14 +1328,20 @@ ostream &operator << (ostream &out, EggTexture::EnvType type) {
   case EggTexture::ET_height:
     return out << "height";
 
-  case EggTexture::ET_selector:
-    return out << "selector";
+  case EggTexture::ET_metallic_roughness:
+    return out << "metallic_roughness";
 
   case EggTexture::ET_normal_gloss:
     return out << "normal_gloss";
 
   case EggTexture::ET_emission:
     return out << "emission";
+
+  case EggTexture::ET_occlusion:
+    return out << "occlusion";
+
+  case EggTexture::ET_occlusion_metallic_roughness:
+    return out << "occlusion_metallic_roughness";
   }
 
   nassertr(false, out);

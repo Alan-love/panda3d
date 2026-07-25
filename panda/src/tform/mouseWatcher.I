@@ -34,12 +34,9 @@ is_mouse_open() const {
  * It is only valid to call this if has_mouse() returns true.  If so, this
  * returns the current position of the mouse within the window.
  */
-INLINE const LPoint2 &MouseWatcher::
+INLINE LPoint2 MouseWatcher::
 get_mouse() const {
-#ifndef NDEBUG
-  static LPoint2 bogus_mouse(0.0f, 0.0f);
-  nassertr(_has_mouse, bogus_mouse);
-#endif
+  nassertr(_has_mouse, LPoint2(0, 0));
   return _mouse;
 }
 
@@ -148,6 +145,17 @@ is_button_down(ButtonHandle button) const {
 }
 
 /**
+ * Similar to is_button_down(), but uses the raw button handle as reported by
+ * the raw- prefixed events, and is not subject to the inactivity timer.
+ *
+ * @since 1.11.0
+ */
+INLINE bool MouseWatcher::
+is_raw_button_down(ButtonHandle button) const {
+  return _current_raw_buttons_down.get_bit(button.get_index());
+}
+
+/**
  * Sets the pattern string that indicates how the event names are generated
  * when a button is depressed.  This is a string that may contain any of the
  * following:
@@ -160,8 +168,8 @@ is_button_down(ButtonHandle button) const {
  * values.
  */
 INLINE void MouseWatcher::
-set_button_down_pattern(const std::string &pattern) {
-  _button_down_pattern = pattern;
+set_button_down_pattern(std::string pattern) {
+  _button_down_pattern = std::move(pattern);
 }
 
 /**
@@ -178,8 +186,8 @@ get_button_down_pattern() const {
  * when a button is released.  See set_button_down_pattern().
  */
 INLINE void MouseWatcher::
-set_button_up_pattern(const std::string &pattern) {
-  _button_up_pattern = pattern;
+set_button_up_pattern(std::string pattern) {
+  _button_up_pattern = std::move(pattern);
 }
 
 /**
@@ -204,8 +212,8 @@ get_button_up_pattern() const {
  * values.
  */
 INLINE void MouseWatcher::
-set_button_repeat_pattern(const std::string &pattern) {
-  _button_repeat_pattern = pattern;
+set_button_repeat_pattern(std::string pattern) {
+  _button_repeat_pattern = std::move(pattern);
 }
 
 /**
@@ -225,8 +233,8 @@ get_button_repeat_pattern() const {
  * it might be "within" multiple nested regions.
  */
 INLINE void MouseWatcher::
-set_enter_pattern(const std::string &pattern) {
-  _enter_pattern = pattern;
+set_enter_pattern(std::string pattern) {
+  _enter_pattern = std::move(pattern);
 }
 
 /**
@@ -247,8 +255,8 @@ get_enter_pattern() const {
  * it might be "within" multiple nested regions.
  */
 INLINE void MouseWatcher::
-set_leave_pattern(const std::string &pattern) {
-  _leave_pattern = pattern;
+set_leave_pattern(std::string pattern) {
+  _leave_pattern = std::move(pattern);
 }
 
 /**
@@ -269,8 +277,8 @@ get_leave_pattern() const {
  * given time, while it might be "within" multiple nested regions.
  */
 INLINE void MouseWatcher::
-set_within_pattern(const std::string &pattern) {
-  _within_pattern = pattern;
+set_within_pattern(std::string pattern) {
+  _within_pattern = std::move(pattern);
 }
 
 /**
@@ -291,8 +299,8 @@ get_within_pattern() const {
  * given time, while it might be "within" multiple nested regions.
  */
 INLINE void MouseWatcher::
-set_without_pattern(const std::string &pattern) {
-  _without_pattern = pattern;
+set_without_pattern(std::string pattern) {
+  _without_pattern = std::move(pattern);
 }
 
 /**
@@ -475,8 +483,8 @@ clear_inactivity_timeout() {
  * timeout counter expires.  See set_inactivity_timeout().
  */
 INLINE void MouseWatcher::
-set_inactivity_timeout_event(const std::string &event) {
-  _inactivity_timeout_event = event;
+set_inactivity_timeout_event(std::string event) {
+  _inactivity_timeout_event = std::move(event);
 }
 
 /**

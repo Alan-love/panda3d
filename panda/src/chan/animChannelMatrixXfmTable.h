@@ -34,7 +34,7 @@ protected:
   AnimChannelMatrixXfmTable(AnimGroup *parent, const AnimChannelMatrixXfmTable &copy);
 
 PUBLISHED:
-  explicit AnimChannelMatrixXfmTable(AnimGroup *parent, const std::string &name);
+  explicit AnimChannelMatrixXfmTable(AnimGroup *parent, std::string name);
   virtual ~AnimChannelMatrixXfmTable();
 
 public:
@@ -77,7 +77,7 @@ public:
   static void register_with_read_factory();
   virtual void write_datagram(BamWriter* manager, Datagram &me);
 
-  static TypedWritable *make_AnimChannelMatrixXfmTable(const FactoryParams &params);
+  static TypedWritable *make_from_bam(const FactoryParams &params);
 
 protected:
   void fillin(DatagramIterator& scan, BamReader* manager);

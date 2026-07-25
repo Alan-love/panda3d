@@ -756,7 +756,9 @@ clear_wordwrap() {
 }
 
 /**
- *
+ * Sets the color of the text.  Note that this will modulate the color of all
+ * components of the text, including the shadow and outline.  If you wish to
+ * only set the foreground color, see DynamicTextFont::set_fg().
  */
 INLINE void TextNode::
 set_text_color(const LColor &text_color) {
@@ -766,7 +768,9 @@ set_text_color(const LColor &text_color) {
 }
 
 /**
- *
+ * Sets the color of the text.  Note that this will modulate the color of all
+ * components of the text, including the shadow and outline.  If you wish to
+ * only set the foreground color, see DynamicTextFont::set_fg().
  */
 INLINE void TextNode::
 set_text_color(PN_stdfloat r, PN_stdfloat g, PN_stdfloat b, PN_stdfloat a) {
@@ -852,9 +856,9 @@ clear_shadow() {
  * "fixed".
  */
 INLINE void TextNode::
-set_bin(const std::string &bin) {
+set_bin(std::string bin) {
   CDWriter cdata(_cycler, true);
-  TextProperties::set_bin(bin);
+  TextProperties::set_bin(std::move(bin));
   invalidate_no_measure(cdata);
 }
 
@@ -979,7 +983,7 @@ get_wordwrapped_text() const {
  * should not include the newline character.
  */
 INLINE PN_stdfloat TextNode::
-calc_width(const std::string &line) const {
+calc_width(std::string_view line) const {
   return calc_width(decode_text(line));
 }
 

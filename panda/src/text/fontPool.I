@@ -15,7 +15,7 @@
  * Returns true if the font has ever been loaded, false otherwise.
  */
 INLINE bool FontPool::
-has_font(const std::string &filename) {
+has_font(std::string_view filename) {
   return get_ptr()->ns_has_font(filename);
 }
 
@@ -26,7 +26,7 @@ has_font(const std::string &filename) {
  * with the same font name will return a valid Font pointer.
  */
 INLINE bool FontPool::
-verify_font(const std::string &filename) {
+verify_font(std::string_view filename) {
   return load_font(filename) != nullptr;
 }
 
@@ -37,7 +37,7 @@ verify_font(const std::string &filename) {
  * returns NULL.
  */
 INLINE TextFont *FontPool::
-load_font(const std::string &filename) {
+load_font(std::string_view filename) {
   return get_ptr()->ns_load_font(filename);
 }
 
@@ -46,18 +46,18 @@ load_font(const std::string &filename) {
  * replace any previously-loaded font in the pool that had the same filename.
  */
 INLINE void FontPool::
-add_font(const std::string &filename, TextFont *font) {
+add_font(std::string_view filename, TextFont *font) {
   get_ptr()->ns_add_font(filename, font);
 }
 
 /**
  * Removes the indicated font from the pool, indicating it will never be
  * loaded again; the font may then be freed.  If this function is never
- * called, a reference count will be maintained on every font every loaded,
+ * called, a reference count will be maintained on every font ever loaded,
  * and fonts will never be freed.
  */
 INLINE void FontPool::
-release_font(const std::string &filename) {
+release_font(std::string_view filename) {
   get_ptr()->ns_release_font(filename);
 }
 

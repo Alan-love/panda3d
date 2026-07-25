@@ -50,9 +50,9 @@ CharacterJoint(const CharacterJoint &copy) :
  */
 CharacterJoint::
 CharacterJoint(Character *character,
-               PartBundle *root, PartGroup *parent, const std::string &name,
+               PartBundle *root, PartGroup *parent, std::string name,
                const LMatrix4 &default_value) :
-  MovingPartMatrix(parent, name, default_value),
+  MovingPartMatrix(parent, std::move(name), default_value),
   _character(character)
 {
   Thread *current_thread = Thread::get_current_thread();
@@ -534,8 +534,8 @@ complete_pointers(TypedWritable **p_list, BamReader* manager) {
 /**
  * Factory method to generate a CharacterJoint object
  */
-TypedWritable* CharacterJoint::
-make_CharacterJoint(const FactoryParams &params) {
+TypedWritable *CharacterJoint::
+make_from_bam(const FactoryParams &params) {
   CharacterJoint *me = new CharacterJoint;
   DatagramIterator scan;
   BamReader *manager;
@@ -550,5 +550,5 @@ make_CharacterJoint(const FactoryParams &params) {
  */
 void CharacterJoint::
 register_with_read_factory() {
-  BamReader::get_factory()->register_factory(get_class_type(), make_CharacterJoint);
+  BamReader::get_factory()->register_factory(get_class_type(), make_from_bam);
 }

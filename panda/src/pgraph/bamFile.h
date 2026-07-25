@@ -44,10 +44,14 @@ PUBLISHED:
   ~BamFile();
 
   bool open_read(const Filename &bam_filename, bool report_errors = true);
-  bool open_read(std::istream &in, const std::string &bam_filename = "stream",
+  bool open_read(std::istream &in, std::string bam_filename = "stream",
                  bool report_errors = true);
 
+#if defined(CPPPARSER) && defined(HAVE_PYTHON)
+  EXTENSION(PyObject *read_object());
+#else
   TypedWritable *read_object();
+#endif
 
   bool is_eof() const;
   bool resolve();
@@ -55,7 +59,7 @@ PUBLISHED:
   PT(PandaNode) read_node(bool report_errors = true);
 
   bool open_write(const Filename &bam_filename, bool report_errors = true);
-  bool open_write(std::ostream &out, const std::string &bam_filename = "stream",
+  bool open_write(std::ostream &out, std::string bam_filename = "stream",
                   bool report_errors = true);
   bool write_object(const TypedWritable *object);
 
@@ -74,7 +78,11 @@ PUBLISHED:
   BamReader *get_reader();
   BamWriter *get_writer();
 
+public:
+  EXTENSION(PyObject *get_file_version() const);
+
 PUBLISHED:
+  MAKE_PROPERTY(file_version, get_file_version);
   MAKE_PROPERTY(file_endian, get_file_endian);
   MAKE_PROPERTY(file_stdfloat_double, get_file_stdfloat_double);
 
@@ -82,8 +90,8 @@ PUBLISHED:
   MAKE_PROPERTY(writer, get_writer);
 
 private:
-  bool continue_open_read(const std::string &bam_filename, bool report_errors);
-  bool continue_open_write(const std::string &bam_filename, bool report_errors);
+  bool continue_open_read(std::string bam_filename, bool report_errors);
+  bool continue_open_write(std::string bam_filename, bool report_errors);
 
   std::string _bam_filename;
   DatagramInputFile _din;

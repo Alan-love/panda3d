@@ -80,15 +80,14 @@ dump_hex(std::ostream &out, unsigned int indent) const {
  * Adds a variable-length wstring to the datagram.
  */
 void Datagram::
-add_wstring(const std::wstring &str) {
+add_wstring(std::wstring_view str) {
   // By convention, wstrings are marked with 32-bit lengths.
   add_uint32((uint32_t)str.length());
 
   // Now append each character in the string.  We store each code little-
   // endian, for no real good reason.
-  std::wstring::const_iterator ci;
-  for (ci = str.begin(); ci != str.end(); ++ci) {
-    add_uint16((uint16_t)*ci);
+  for (wchar_t ch : str) {
+    add_uint16((uint16_t)ch);
   }
 }
 
@@ -113,8 +112,8 @@ pad_bytes(size_t size) {
   // Now append the data.
 
   // It is very important that we *don't* do this reserve() operation.  See
-  // the further comments in append_data(), below.  _data.reserve(_data.size()
-  // + size);
+  // the further comments in append_data(), below.
+  //_data.reserve(_data.size() + size);
 
   while (size > 0) {
     _data.push_back('\0');
@@ -146,7 +145,8 @@ append_data(const void *data, size_t size) {
   // actually slows it down on Windows, which takes the reserve() request as a
   // fixed size the array should be set to (!) instead of as a minimum size to
   // guarantee.  This forces the array to reallocate itself with *every* call
-  // to append_data!  _data.reserve(_data.size() + size);
+  // to append_data!
+  //_data.reserve(_data.size() + size);
 
   _data.v().insert(_data.v().end(), (const unsigned char *)data,
                    (const unsigned char *)data + size);

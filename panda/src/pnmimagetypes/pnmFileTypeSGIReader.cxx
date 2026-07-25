@@ -62,7 +62,7 @@ static void * xmalloc (int bytes);
 #define MALLOC(n, type)     (type *)xmalloc((n) * sizeof(type))
 static const char * compression_name (char compr);
 static void       read_bytes (istream *ifp, int n, char *buf);
-static bool read_header(istream *ifp, Header *head, const string &magic_number);
+static bool read_header(istream *ifp, Header *head, std::string_view magic_number);
 static TabEntry * read_table (istream *ifp, int tablen);
 static void       read_channel (istream *ifp, int xsize, int ysize,
                                      int zsize, int bpc, TabEntry *table,
@@ -220,7 +220,7 @@ read_row(xel *row_data, xelval *alpha_data, int x_size, int y_size) {
 
 
 static bool
-read_header(istream *ifp, Header *head, const string &magic_number) {
+read_header(istream *ifp, Header *head, std::string_view magic_number) {
     nassertr(magic_number.size() == 4, false);
     head->magic =
       ((unsigned char)magic_number[0] << 8) |
@@ -386,10 +386,10 @@ rle_decompress(ScanElem *src,
         --srcleft;
         count = (int)(el & 0x7f);
 
-        if( count == 0 )
-            return;
         if( destleft < count )
             pm_error("RLE error: too much input data (space left %d, need %d)", destleft, count);
+        if( count == 0 )
+            return;
         destleft -= count;
         if( el & 0x80 ) {
             if( srcleft < count )

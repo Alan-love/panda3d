@@ -19,7 +19,7 @@ ThreadPosixImpl(Thread *parent_obj) :
   _parent_obj(parent_obj)
 {
   _joinable = false;
-  _detached = false;
+  _detached = true;
   _status = S_new;
 #ifdef ANDROID
   _jni_env = nullptr;
@@ -46,25 +46,13 @@ prepare_for_exit() {
 INLINE Thread *ThreadPosixImpl::
 get_current_thread() {
   TAU_PROFILE("Thread *ThreadPosixImpl::get_current_thread()", " ", TAU_USER);
-  if (!_got_pt_ptr_index) {
-    init_pt_ptr_index();
-  }
-  return (Thread *)pthread_getspecific(_pt_ptr_index);
-}
-
-/**
- * Associates the indicated Thread object with the currently-executing thread.
- * You should not call this directly; use Thread::bind_thread() instead.
- */
-INLINE void ThreadPosixImpl::
-bind_thread(Thread *thread) {
-  if (!_got_pt_ptr_index) {
-    init_pt_ptr_index();
-  }
-  int result = pthread_setspecific(_pt_ptr_index, thread);
-  nassertv(result == 0);
 #ifdef ANDROID
-  bind_java_thread();
+  // Android doesn't correctly share TLS variables across multiple DSOs, so
+  // we can't inline this.
+  return do_get_current_thread();
+#else
+  Thread *thread = _current_thread;
+  return (thread != nullptr) ? thread : init_current_thread();
 #endif
 }
 

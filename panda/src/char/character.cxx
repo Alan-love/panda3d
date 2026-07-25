@@ -38,16 +38,16 @@ PStatCollector Character::_animation_pcollector("*:Animation");
 Character::
 Character(const Character &copy, bool copy_bundles) :
   PartBundleNode(copy),
+  _last_auto_update(-1.0),
+  _view_frame(-1),
+  _view_distance2(0.0f),
   _lod_center(copy._lod_center),
   _lod_far_distance(copy._lod_far_distance),
   _lod_near_distance(copy._lod_near_distance),
   _lod_delay_factor(copy._lod_delay_factor),
   _do_lod_animation(copy._do_lod_animation),
   _joints_pcollector(copy._joints_pcollector),
-  _skinning_pcollector(copy._skinning_pcollector),
-  _last_auto_update(-1.0),
-  _view_frame(-1),
-  _view_distance2(0.0f)
+  _skinning_pcollector(copy._skinning_pcollector)
 {
   set_cull_callback();
 
@@ -73,13 +73,13 @@ Character(const Character &copy, bool copy_bundles) :
  *
  */
 Character::
-Character(const std::string &name) :
-  PartBundleNode(name, new CharacterJointBundle(name)),
-  _joints_pcollector(PStatCollector(_animation_pcollector, name), "Joints"),
-  _skinning_pcollector(PStatCollector(_animation_pcollector, name), "Vertices"),
+Character(std::string_view name) :
+  PartBundleNode(std::string(name), new CharacterJointBundle(std::string(name))),
   _last_auto_update(-1.0),
   _view_frame(-1),
-  _view_distance2(0.0f)
+  _view_distance2(0.0f),
+  _joints_pcollector(PStatCollector(_animation_pcollector, name), "Joints"),
+  _skinning_pcollector(PStatCollector(_animation_pcollector, name), "Vertices")
 {
   set_cull_callback();
   clear_lod_animation();
@@ -326,7 +326,7 @@ clear_lod_animation() {
  * to a slider.
  */
 CharacterJoint *Character::
-find_joint(const std::string &name) const {
+find_joint(std::string_view name) const {
   LightMutexHolder holder(_lock);
   for (PartBundleHandle *handle : _bundles) {
     PartGroup *part = handle->get_bundle()->find_child(name);
@@ -344,7 +344,7 @@ find_joint(const std::string &name) const {
  * to a joint.
  */
 CharacterSlider *Character::
-find_slider(const std::string &name) const {
+find_slider(std::string_view name) const {
   LightMutexHolder holder(_lock);
   for (PartBundleHandle *handle : _bundles) {
     PartGroup *part = handle->get_bundle()->find_child(name);

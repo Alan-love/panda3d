@@ -26,8 +26,8 @@ TypeHandle LensNode::_type_handle;
  *
  */
 LensNode::
-LensNode(const std::string &name, Lens *lens) :
-  PandaNode(name)
+LensNode(std::string name, Lens *lens) :
+  PandaNode(std::move(name))
 {
   if (lens == nullptr) {
     lens = new PerspectiveLens;
@@ -119,7 +119,8 @@ set_lens_active(int index, bool flag) {
 
 /**
  * Returns true if the given point is within the bounds of the lens of the
- * LensNode (i.e.  if the camera can see the point).
+ * LensNode (i.e.  if the camera can see the point).  The point is assumed to
+ * be relative to the LensNode itself.
  */
 bool LensNode::
 is_in_view(int index, const LPoint3 &pos) {

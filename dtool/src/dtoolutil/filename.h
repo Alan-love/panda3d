@@ -20,6 +20,7 @@
 #include "register_type.h"
 #include "vector_string.h"
 #include "textEncoder.h"
+#include "patomic.h"
 
 #include <assert.h>
 
@@ -35,6 +36,11 @@ class DSearchPath;
  * convention, and it knows how to perform basic OS-specific I/O, like testing
  * for file existence and searching a searchpath, as well as the best way to
  * open an fstream for reading or writing.
+ *
+ * Note that the methods of Filename that interact with the filesystem (such
+ * as exists(), open_read(), etc.) directly interface with the operating system
+ * and are not aware of Panda's virtual file system.  To interact with the VFS,
+ * use the methods on VirtualFileSystem instead.
  */
 class EXPCL_DTOOL_DTOOLUTIL Filename {
 PUBLISHED:
@@ -57,39 +63,37 @@ public:
   INLINE Filename(const char *filename);
   INLINE Filename(const std::string &filename);
   INLINE Filename(const std::wstring &filename);
+  INLINE Filename(std::string_view filename);
+  INLINE Filename(std::wstring_view filename);
   INLINE Filename(const Filename &copy);
   INLINE Filename(std::string &&filename) noexcept;
   INLINE Filename(Filename &&from) noexcept;
 
 PUBLISHED:
   INLINE Filename();
-  Filename(const Filename &dirname, const Filename &basename);
+  explicit Filename(const Filename &dirname, const Filename &basename);
 
-#ifdef HAVE_PYTHON
-  EXTENSION(Filename(PyObject *path));
+  PY_EXTENSION(Filename(PyObject *path));
 
-  EXTENSION(PyObject *__reduce__(PyObject *self) const);
-#endif
+  PY_EXTENSION(PyObject *__reduce__(PyObject *self) const);
 
   // Static constructors to explicitly create a filename that refers to a text
   // or binary file.  This is in lieu of calling set_text() or set_binary() or
   // set_type().
-  INLINE static Filename text_filename(const Filename &filename);
-  INLINE static Filename text_filename(const std::string &filename);
-  INLINE static Filename binary_filename(const Filename &filename);
-  INLINE static Filename binary_filename(const std::string &filename);
-  INLINE static Filename dso_filename(const std::string &filename);
-  INLINE static Filename executable_filename(const std::string &filename);
+  INLINE static Filename text_filename(Filename filename);
+  INLINE static Filename binary_filename(Filename filename);
+  INLINE static Filename dso_filename(Filename filename);
+  INLINE static Filename executable_filename(Filename filename);
 
-  INLINE static Filename pattern_filename(const std::string &filename);
+  INLINE static Filename pattern_filename(std::string_view filename);
 
-  static Filename from_os_specific(const std::string &os_specific,
+  static Filename from_os_specific(std::string_view os_specific,
                                    Type type = T_general);
-  static Filename from_os_specific_w(const std::wstring &os_specific,
+  static Filename from_os_specific_w(std::wstring_view os_specific,
                                      Type type = T_general);
-  static Filename expand_from(const std::string &user_string,
+  static Filename expand_from(std::string_view user_string,
                               Type type = T_general);
-  static Filename temporary(const std::string &dirname, const std::string &prefix,
+  static Filename temporary(std::string_view dirname, const std::string &prefix,
                             const std::string &suffix = std::string(),
                             Type type = T_general);
 
@@ -99,27 +103,33 @@ PUBLISHED:
   static const Filename &get_common_appdata_directory();
 
   // Assignment is via the = operator.
+public:
+  INLINE Filename &operator = (const char *filename);
   INLINE Filename &operator = (const std::string &filename);
   INLINE Filename &operator = (const std::wstring &filename);
-  INLINE Filename &operator = (const char *filename);
+
+PUBLISHED:
+  INLINE Filename &operator = (std::string_view filename);
+  INLINE Filename &operator = (std::wstring_view filename);
   INLINE Filename &operator = (const Filename &copy);
   INLINE Filename &operator = (std::string &&filename) noexcept;
   INLINE Filename &operator = (Filename &&from) noexcept;
 
   // And retrieval is by any of the classic string operations.
   INLINE operator const std::string & () const;
+  INLINE operator std::string_view () const;
   INLINE const char *c_str() const;
   INLINE bool empty() const;
   INLINE size_t length() const;
   INLINE char operator [] (size_t n) const;
 
-  EXTENSION(PyObject *__repr__() const);
-  EXTENSION(PyObject *__fspath__() const);
+  PY_EXTENSION(PyObject *__repr__() const);
+  PY_EXTENSION(PyObject *__fspath__() const);
 
   INLINE std::string substr(size_t begin) const;
   INLINE std::string substr(size_t begin, size_t end) const;
-  INLINE void operator += (const std::string &other);
-  INLINE Filename operator + (const std::string &other) const;
+  INLINE void operator += (std::string_view other);
+  INLINE Filename operator + (std::string_view other) const;
 
   INLINE Filename operator / (const Filename &other) const;
 
@@ -133,12 +143,12 @@ PUBLISHED:
   INLINE std::string get_extension() const;
 
   // You can also use any of these to reassign pieces of the filename.
-  void set_fullpath(const std::string &s);
-  void set_dirname(const std::string &s);
-  void set_basename(const std::string &s);
-  void set_fullpath_wo_extension(const std::string &s);
-  void set_basename_wo_extension(const std::string &s);
-  void set_extension(const std::string &s);
+  void set_fullpath(std::string_view s);
+  void set_dirname(std::string_view s);
+  void set_basename(std::string_view s);
+  void set_fullpath_wo_extension(std::string_view s);
+  void set_basename_wo_extension(std::string_view s);
+  void set_extension(std::string_view s);
 
   // Setting these flags appropriately is helpful when opening or searching
   // for a file; it helps the Filename resolve OS-specific conventions (for
@@ -160,7 +170,7 @@ PUBLISHED:
   Filename get_filename_index(int index) const;
 
   INLINE std::string get_hash_to_end() const;
-  void set_hash_to_end(const std::string &s);
+  void set_hash_to_end(std::string_view s);
 
   void extract_components(vector_string &components) const;
   void standardize();
@@ -194,14 +204,12 @@ PUBLISHED:
   std::streamsize get_file_size() const;
 
   bool resolve_filename(const DSearchPath &searchpath,
-                        const std::string &default_extension = std::string());
+                        std::string_view default_extension = std::string_view());
   bool make_relative_to(Filename directory, bool allow_backups = true);
   int find_on_searchpath(const DSearchPath &searchpath);
 
   bool scan_directory(vector_string &contents) const;
-#ifdef HAVE_PYTHON
-  EXTENSION(PyObject *scan_directory() const);
-#endif
+  PY_EXTENSION(PyObject *scan_directory() const);
 
   bool open_read(std::ifstream &stream) const;
   bool open_write(std::ofstream &stream, bool truncate = true) const;
@@ -228,9 +236,9 @@ PUBLISHED:
   bool rmdir() const;
 
   // Comparison operators are handy.
-  INLINE bool operator == (const std::string &other) const;
-  INLINE bool operator != (const std::string &other) const;
-  INLINE bool operator < (const std::string &other) const;
+  INLINE bool operator == (std::string_view other) const;
+  INLINE bool operator != (std::string_view other) const;
+  INLINE bool operator < (std::string_view other) const;
   INLINE int compare_to(const Filename &other) const;
   INLINE bool __bool__() const;
   int get_hash() const;
@@ -241,15 +249,15 @@ PUBLISHED:
   INLINE static TextEncoder::Encoding get_filesystem_encoding();
 
 public:
-  bool atomic_compare_and_exchange_contents(std::string &orig_contents, const std::string &old_contents, const std::string &new_contents) const;
+  bool atomic_compare_and_exchange_contents(std::string &orig_contents, std::string_view old_contents, std::string_view new_contents) const;
   bool atomic_read_contents(std::string &contents) const;
 
 protected:
   void locate_basename();
   void locate_extension();
   void locate_hash();
-  size_t get_common_prefix(const std::string &other) const;
-  static int count_slashes(const std::string &str);
+  size_t get_common_prefix(std::string_view other) const;
+  static int count_slashes(std::string_view str);
   bool r_make_canonical(const Filename &cwd);
 
   std::string _filename;
@@ -265,15 +273,15 @@ protected:
   int _flags;
 
   static TextEncoder::Encoding _filesystem_encoding;
-  static TVOLATILE AtomicAdjust::Pointer _home_directory;
-  static TVOLATILE AtomicAdjust::Pointer _temp_directory;
-  static TVOLATILE AtomicAdjust::Pointer _user_appdata_directory;
-  static TVOLATILE AtomicAdjust::Pointer _common_appdata_directory;
+  static patomic<Filename *> _home_directory;
+  static patomic<Filename *> _temp_directory;
+  static patomic<Filename *> _user_appdata_directory;
+  static patomic<Filename *> _common_appdata_directory;
 
 #ifdef ANDROID
 public:
   static std::string _internal_data_dir;
-#endif
+#endif // ANDROID
 
 public:
   static TypeHandle get_class_type() {
@@ -294,4 +302,4 @@ INLINE std::ostream &operator << (std::ostream &out, const Filename &n) {
 
 #include "filename.I"
 
-#endif
+#endif // !FILENAME_H

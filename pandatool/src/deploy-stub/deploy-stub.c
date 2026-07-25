@@ -21,6 +21,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <time.h>
 
 #include <locale.h>
 
@@ -34,6 +35,8 @@
 enum Flags {
   F_log_append = 1,
   F_log_filename_strftime = 2,
+  F_keep_docstrings = 4,
+  F_python_verbose = 8,
 };
 
 /* Define an exposed symbol where we store the offset to the module data. */
@@ -56,6 +59,13 @@ volatile struct {
   // end up putting it in the .bss section for zero-initialized data.
 } blobinfo = {(uint64_t)-1};
 
+
+#ifdef _WIN32
+// These placeholders can have their names changed by deploy-stub.
+__declspec(dllexport) DWORD SymbolPlaceholder___________________ = 0x00000001;
+__declspec(dllexport) DWORD SymbolPlaceholder__ = 0x00000001;
+#endif
+
 #ifdef MS_WINDOWS
 #  define WIN32_LEAN_AND_MEAN
 #  include <windows.h>
@@ -72,6 +82,16 @@ static struct _inittab extensions[] = {
 
 #ifdef _WIN32
 static wchar_t *log_pathw = NULL;
+#endif
+
+#if PY_VERSION_HEX >= 0x030b0000
+typedef struct {
+  const char *name;
+  const unsigned char *code;
+  int size;
+} ModuleDef;
+#else
+typedef struct _frozen ModuleDef;
 #endif
 
 /**
@@ -303,7 +323,9 @@ static int setup_logging(const char *path, int append) {
   dup2(fd, 1);
   dup2(fd, 2);
 
-  close(fd);
+  if (close(fd) < 0) {
+    perror("setup_logging: close");
+  }
   return 1;
 #endif
 }
@@ -387,6 +409,18 @@ int Py_FrozenMain(int argc, char **argv)
     Py_FrozenFlag = 1; /* Suppress errors from getpath.c */
     Py_NoSiteFlag = 0;
     Py_NoUserSiteDirectory = 1;
+
+#if PY_VERSION_HEX >= 0x03020000
+    if (blobinfo.flags & F_keep_docstrings) {
+      Py_OptimizeFlag = 1;
+    } else {
+      Py_OptimizeFlag = 2;
+    }
+#endif
+
+    if (blobinfo.flags & F_python_verbose) {
+      Py_VerboseFlag = 1;
+    }
 
 #ifndef NDEBUG
     if ((p = Py_GETENV("PYTHONINSPECT")) && *p != '\0')
@@ -611,7 +645,7 @@ int wmain(int argc, wchar_t *argv[]) {
 int main(int argc, char *argv[]) {
 #endif
   int retval;
-  struct _frozen *moddef;
+  ModuleDef *moddef;
   const char *log_filename;
   void *blob = NULL;
   log_filename = NULL;
@@ -661,6 +695,9 @@ int main(int argc, char *argv[]) {
 
     // Offset the pointers in the module table using the base mmap address.
     moddef = blobinfo.pointers[0];
+#if PY_VERSION_HEX < 0x030b0000
+    PyImport_FrozenModules = moddef;
+#endif
     while (moddef->name) {
       moddef->name = (char *)((uintptr_t)moddef->name + (uintptr_t)blob);
       if (moddef->code != 0) {
@@ -669,6 +706,26 @@ int main(int argc, char *argv[]) {
       //printf("MOD: %s %p %d\n", moddef->name, (void*)moddef->code, moddef->size);
       moddef++;
     }
+
+    // In Python 3.11, we need to convert this to the new structure format.
+#if PY_VERSION_HEX >= 0x030b0000
+    ModuleDef *moddef_end = moddef;
+    ptrdiff_t num_modules = moddef - (ModuleDef *)blobinfo.pointers[0];
+    struct _frozen *new_moddef = (struct _frozen *)calloc(num_modules + 1, sizeof(struct _frozen));
+    PyImport_FrozenModules = new_moddef;
+    for (moddef = blobinfo.pointers[0]; moddef < moddef_end; ++moddef) {
+      new_moddef->name = moddef->name;
+      new_moddef->code = moddef->code;
+      new_moddef->size = moddef->size < 0 ? -(moddef->size) : moddef->size;
+      new_moddef->is_package = moddef->size < 0;
+#if PY_VERSION_HEX < 0x030d0000 // 3.13
+      new_moddef->get_code = NULL;
+#endif
+      new_moddef++;
+    }
+#endif
+  } else {
+    PyImport_FrozenModules = blobinfo.pointers[0];
   }
 
   if (log_filename != NULL) {
@@ -691,11 +748,15 @@ int main(int argc, char *argv[]) {
 #endif
 
   // Run frozen application
-  PyImport_FrozenModules = blobinfo.pointers[0];
   retval = Py_FrozenMain(argc, argv);
 
   fflush(stdout);
   fflush(stderr);
+
+#if PY_VERSION_HEX >= 0x030b0000
+  free((void *)PyImport_FrozenModules);
+  PyImport_FrozenModules = NULL;
+#endif
 
   unmap_blob(blob);
   return retval;

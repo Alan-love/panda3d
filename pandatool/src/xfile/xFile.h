@@ -34,7 +34,7 @@ public:
   XFile(bool keep_names=false);
   ~XFile();
 
-  virtual void clear();
+  virtual void clear() final;
 
   bool read(Filename filename);
   bool read(std::istream &in, const std::string &filename = std::string());
@@ -42,13 +42,13 @@ public:
   bool write(Filename filename) const;
   bool write(std::ostream &out) const;
 
-  XFileTemplate *find_template(const std::string &name) const;
+  XFileTemplate *find_template(std::string_view name) const;
   XFileTemplate *find_template(const WindowsGuid &guid) const;
 
-  static XFileTemplate *find_standard_template(const std::string &name);
+  static XFileTemplate *find_standard_template(std::string_view name);
   static XFileTemplate *find_standard_template(const WindowsGuid &guid);
 
-  XFileDataNodeTemplate *find_data_object(const std::string &name) const;
+  XFileDataNodeTemplate *find_data_object(std::string_view name) const;
   XFileDataNodeTemplate *find_data_object(const WindowsGuid &guid) const;
 
   virtual void write_text(std::ostream &out, int indent_level) const;
